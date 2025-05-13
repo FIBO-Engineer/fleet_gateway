@@ -163,15 +163,6 @@ def pose_msg(x, y, yaw):
         'orientation': {'x': 0.0, 'y': 0.0, 'z': math.sin(yaw/2), 'w': math.cos(yaw/2)}
     }
 
-[
-  { "x": 9.31, "y": 6.33 },
-  { "x": 9.86, "y": 7.29 },
-  { "x": 10.41, "y": 8.24 },
-  { "x": 10.96, "y": 7.29 },
-  { "x": 11.51, "y": 6.33 },
-  { "x": 10.41, "y": 6.33 }
-]
-
 
 robot_network = PathNetwork([
     pose_msg(9.31, 6.33, -1.57),
