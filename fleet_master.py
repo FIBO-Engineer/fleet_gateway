@@ -1,4 +1,5 @@
 import time
+import math
 
 import signal
 import sys
@@ -52,17 +53,28 @@ somshine = Robot('Somshine', '192.168.123.172', 8002)
 fleet = Fleet(journey, chompu, somshine)
 fleet.run()
 
+def pose_msg(x, y, yaw): 
+    return {
+        'position': {'x': x, 'y': y, 'z': 0.0},
+        'orientation': {'x': 0.0, 'y': 0.0, 'z': math.sin(yaw/2), 'w': math.cos(yaw/2)}
+    }
+
 
 class PathNetwork(nx.DiGraph):
     def __init__(self):
         super().__init__()
+        pose_value = {
+            'position': {'x': 1.0, 'y': 2.0, 'z': 0.0},
+            'orientation': {'x': 0.0, 'y': 0.0, 'z': 0.0, 'w': 1.0}
+        }
+
         self.add_nodes_from([
-            (0, {"robot": "journey", }),
-            (1, {}),
-            (2, {"robot": "somshine"}),
-            (3, {}),
-            (4, {"robot": "chompu"}), 
-            (5, {})
+            (0, {'pose': pose_msg(1.0, 0.0, 0.0)}),
+            (1, {'pose': pose_msg(2.0, 0.0, 0.0)}),
+            (2, {'pose': pose_msg(3.0, 0.0, 0.0)}),
+            (3, {'pose': pose_msg(4.0, 0.0, 0.0)}),
+            (4, {'pose': pose_msg(5.0, 0.0, 0.0)}),
+            (5, {'pose': pose_msg(6.0, 0.0, 0.0)})
         ])
         for i in range(6):
             self.add_edge(i, (i + 1) % 6)
@@ -85,8 +97,8 @@ class PathNetwork(nx.DiGraph):
             next_node = next(self.successors(n))
             self.nodes[next_node]['robot'] = robot
     
-    def get_goals(self):
-        #
+    def get_robot_goals(self):
+        
 
 # Define a clean shutdown on Ctrl+C
 def signal_handler(sig, frame):
