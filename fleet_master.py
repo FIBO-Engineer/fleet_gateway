@@ -16,18 +16,19 @@ from typing import Sequence, Dict, Any, List, Optional
 class Robot(roslibpy.Ros):
     def __init__(self, name: str, host_ip: str, port: int) -> None:
         super().__init__(host=host_ip, port=port)
+        self.run(1.0)
         self.name = name
         self.reached = True
         # set up the action client and wait for server
         self.move_base_action_client = roslibpy.actionlib.ActionClient(
             self,
             '/move_base',
-            'move_base_msgs/MoveBase'
+            'move_base_msgs/MoveBaseAction'
         )
-        if self.move_base_action_client.wait_for_server(timeout=5.0):
-            print(f"{self.name}: action server ready")
-        else:
-            print(f"{self.name}: no action server")
+        # if self.move_base_action_client.wait_for_server(timeout=5.0):
+        #     print(f"{self.name}: action server ready")
+        # else:
+        #     print(f"{self.name}: no action server")
         self.goal: Optional[roslibpy.actionlib.Goal] = None
 
     def navigate(self, pose: dict, frame_id: str = 'map') -> None:
@@ -87,13 +88,12 @@ class Fleet(List[Robot]):
         for robot in self:
             robot.terminate()
 
-    def connect(self):
-        for robot in self:
-            try:
-                robot.run(1.0)
-                print(robot.name + ' successfully joined to the fleet')
-            except roslibpy.core.RosTimeoutError:
-                print(robot.name + ' failed to joined to the fleet')   
+    # def connect(self):
+    #     for robot in self:
+    #         try:
+    #             print(robot.name + ' successfully joined to the fleet')
+    #         except roslibpy.core.RosTimeoutError:
+    #             print(robot.name + ' failed to joined to the fleet')   
 
     def send_targets(self, poses: Dict[str, Any]):
         for robot in self:
@@ -108,11 +108,15 @@ class Fleet(List[Robot]):
 
     def all_reached(self):
         return all(robot.has_reached() for robot in self)
+    
+    # def print_status(self):
+    #     for robot in self:
+    #         status = 'connected' if robot.is_connected else 'disconnected'
+    #         print(f"{robot.name} {status}")
 
-    def print_connection_status(self):
+    def print_status(self):
         for robot in self:
-            status = 'connected' if robot.is_connected else 'disconnected'
-            print(f"{robot.name} {status}")
+            print(f"{robot.name} {robot.reached} ")
 
 class PathNetwork(nx.DiGraph):
     def __init__(self, poses: Sequence[Any]) -> None:
@@ -193,7 +197,6 @@ chompu = Robot('Chompu', '192.168.123.171', 8002)
 somshine = Robot('Somshine', '192.168.123.172', 8002)
 # fleet = Fleet(journey, chompu, somshine)
 fleet = Fleet(chompu, somshine)
-fleet.connect()
 
 
 # Define a clean shutdown on Ctrl+C
@@ -237,9 +240,13 @@ try:
                     progressing = True
                 continue
             elif ch == 'c':
-                print("Cancel command issued")
+                print("Key 'c' pressed, cancel command issued")
                 progressing = False
                 fleet.cancel_all()
+                continue
+            elif ch == 'g':
+                print("Key 'g' pressed, get status")
+                fleet.print_status()
                 continue
         
         if progressing and fleet.all_reached():
