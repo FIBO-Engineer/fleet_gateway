@@ -163,26 +163,36 @@ def pose_msg(x, y, yaw):
         'orientation': {'x': 0.0, 'y': 0.0, 'z': math.sin(yaw/2), 'w': math.cos(yaw/2)}
     }
 
+[
+  { "x": 9.31, "y": 6.33 },
+  { "x": 9.86, "y": 7.29 },
+  { "x": 10.41, "y": 8.24 },
+  { "x": 10.96, "y": 7.29 },
+  { "x": 11.51, "y": 6.33 },
+  { "x": 10.41, "y": 6.33 }
+]
+
+
 robot_network = PathNetwork([
-    pose_msg(1.0, 0.0, 0.0),
-    pose_msg(2.0, 0.0, 0.0),
-    pose_msg(3.0, 0.0, 0.0),
-    pose_msg(4.0, 0.0, 0.0),
-    pose_msg(5.0, 0.0, 0.0),
-    pose_msg(6.0, 0.0, 0.0)
+    pose_msg(9.31, 6.33, -1.57),
+    pose_msg(9.86, 7.29, -1.57),
+    pose_msg(10.41, 8.24, -1.57),
+    pose_msg(10.96, 7.29, -1.57),
+    pose_msg(11.51, 6.33, -1.57),
+    pose_msg(10.41, 6.33, -1.57)
 ])
 
 # Robot Initials
-robot_network.place_robot(0, 'Journey')
+# robot_network.place_robot(0, 'Journey')
 robot_network.place_robot(2, 'Somshine')
 robot_network.place_robot(4, 'Chompu')
 
-
 # Connection Configuration
-journey = Robot('Journey', '192.168.123.151', 8002)
+# journey = Robot('Journey', '192.168.123.151', 8002)
 chompu = Robot('Chompu', '192.168.123.171', 8002)
 somshine = Robot('Somshine', '192.168.123.172', 8002)
-fleet = Fleet(journey, chompu, somshine)
+# fleet = Fleet(journey, chompu, somshine)
+fleet = Fleet(chompu, somshine)
 fleet.connect()
 
 
