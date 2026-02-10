@@ -3,12 +3,12 @@ import roslibpy.actionlib
 from typing import Optional
 
 
-class Robot(roslibpy.Ros):
+class RobotHandler(roslibpy.Ros):
     def __init__(self, name: str, host_ip: str, port: int) -> None:
         super().__init__(host=host_ip, port=port)
         self.run(1.0)
-        self.name = name
-        self.reached = True
+        self.name : str = name
+        self.tasks : list[] = []
         # set up the action client and wait for server
         self.move_base_action_client = roslibpy.actionlib.ActionClient(
             self,

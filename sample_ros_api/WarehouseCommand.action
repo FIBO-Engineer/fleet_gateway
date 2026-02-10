@@ -1,0 +1,19 @@
+# check Node.msg for definition
+
+# operation enum
+uint8 PICKUP=0
+uint8 DELIVERY=1
+
+# robot_cell enum
+uint8 LOWEST=0
+
+# state enum
+# TODO: Mobile Base + Piggybag State
+
+Node[] nodes
+uint8 operation 
+uint8 robot_cell  
+---
+---
+uint64 detected_id
+uint8 state

@@ -1,5 +1,5 @@
 from typing import Dict, Any, List
-from robot import Robot
+from fleet_gateway.robot_handler import Robot
 
 
 class Fleet(List[Robot]):

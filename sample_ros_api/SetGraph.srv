@@ -1,0 +1,4 @@
+Node[] nodes
+---
+bool success
+string message
