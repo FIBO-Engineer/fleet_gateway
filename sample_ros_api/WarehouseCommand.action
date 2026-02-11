@@ -1,8 +1,9 @@
 # check Node.msg for definition
 
 # operation enum
-uint8 PICKUP=0
-uint8 DELIVERY=1
+uint8 TRAVEL=0
+uint8 PICKUP=1
+uint8 DELIVERY=2
 
 # robot_cell enum
 uint8 LOWEST=0

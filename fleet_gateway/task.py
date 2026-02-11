@@ -4,8 +4,9 @@ from enum import Enum
 from node import Node
 
 class WarehouseOperation(Enum):
-    PICKUP = 0
-    DELIVERY = 1
+    TRAVEL = 0
+    PICKUP = 1
+    DELIVERY = 2
 
 @dataclass
 class Task:
