@@ -2,7 +2,7 @@ import os
 from supabase import create_client, Client
 from typing import overload
 
-from node import Node, NodeType
+from backup.node import Node, NodeType
 
 class GraphOracle:
     def __init__(self, supabase_url, supabase_key):

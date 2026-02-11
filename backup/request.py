@@ -1,0 +1,1 @@
+Request = tuple[int, int]

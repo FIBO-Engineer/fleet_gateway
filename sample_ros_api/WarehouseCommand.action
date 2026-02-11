@@ -6,14 +6,15 @@ uint8 PICKUP=1
 uint8 DELIVERY=2
 
 # robot_cell enum
-uint8 LOWEST=0
+int8 UNUSED=-1 # Indicating that robot_cell is not used in the process e.g., TRAVEL operation
+int8 LOWEST=0
 
 # state enum
 # TODO: Mobile Base + Piggybag State
 
 Node[] nodes
 uint8 operation 
-uint8 robot_cell  
+int8 robot_cell  
 ---
 ---
 uint64 detected_id

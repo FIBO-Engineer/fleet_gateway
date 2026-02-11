@@ -1,99 +1,50 @@
-import time
-import signal
-import sys
-import termios
-import tty
-import select
+import asyncio
+from contextlib import asynccontextmanager, suppress
 
-from fleet_gateway.robot import Robot
-from fleet_gateway.fleet import Fleet
-from fleet_gateway.path_network import PathNetwork
-from fleet_gateway.utils import pose_msg
+import redis.asyncio as redis
+import strawberry
+from fastapi import FastAPI
+from strawberry.fastapi import GraphQLRouter
 
+from fleet_gateway.robot_handler import RobotHandler
+from schema import Query
 
-robot_network = PathNetwork([
-    pose_msg(9.31, 6.33, -1.57),
-    pose_msg(9.86, 7.29, -1.57),
-    pose_msg(10.41, 8.24, -1.57),
-    pose_msg(10.96, 7.29, -1.57),
-    pose_msg(11.51, 6.33, -1.57),
-    pose_msg(10.41, 6.33, -1.57)
-])
+async def handler_connect_loop(robot_handlers: list[RobotHandler], stop_event: asyncio.Event):
+    while not stop_event.is_set():
+        for rh in robot_handlers:
+            if not rh.is_connected():
+                rh.connect()
 
-# Robot Initials
-# robot_network.place_robot(0, 'Journey')
-robot_network.place_robot(2, 'Somshine')
-robot_network.place_robot(4, 'Chompu')
+        # Just delay for 1 second or stop_event is triggered
+        with suppress(asyncio.TimeoutError):
+            await asyncio.wait_for(stop_event.wait(), timeout=1.0)
 
-# Connection Configuration
-# journey = Robot('Journey', '192.168.123.151', 8002)
-chompu = Robot('Chompu', '192.168.123.171', 8002)
-somshine = Robot('Somshine', '192.168.123.172', 8002)
-# fleet = Fleet(journey, chompu, somshine)
-fleet = Fleet(chompu, somshine)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.robot_handlers = [
+        RobotHandler('Lertvilai', '192.168.123.171', 8002),
+        # RobotHandler('Chompu', '192.168.123.171', 8002)
+    ]
+    app.state.redis = redis.Redis(host='localhost', port=6379, decode_responses=True)
+    await app.state.redis.ping()
 
+    stop_event = asyncio.Event()
+    auto_connector = asyncio.create_task(handler_connect_loop(app.state.robot_handlers, stop_event))
+    try:
+        yield
+    finally:
+        stop_event.set()
+        await auto_connector
+        await app.state.redis.aclose()
 
-# Define a clean shutdown on Ctrl+C
-def signal_handler(sig, frame):
-    print('Interrupt received, shutting down')
-    fleet.terminate()
-    sys.exit(0)
+async def get_context(request):
+    return {
+        "request": request,
+        "redis": request.app.state.redis,   # from your FastAPI lifespan
+    }
 
-signal.signal(signal.SIGINT, signal_handler)
+schema = strawberry.Schema(query=Query, context_getter=get_context)
+graphql_app = GraphQLRouter(schema)
 
-# Configure terminal to read single key without blocking
-fd = sys.stdin.fileno()
-old_term_settings = termios.tcgetattr(fd)
-tty.setcbreak(fd)
-
-progressing = False
-automatic = False
-
-try:
-    while any(robot.is_connected for robot in fleet):
-        # Check for 'q' key press to quit
-        dr, dw, de = select.select([sys.stdin], [], [], 0)
-        if dr:
-            ch = sys.stdin.read(1)
-            if ch == 'q':
-                print("Key 'q' pressed, exiting loop")
-                break
-            elif ch == 'a':
-                automatic = not automatic
-                print(f"Key 'a' pressed, toggle automatic mode to: {automatic}")
-                if automatic and not progressing:
-                    fleet.send_targets(robot_network.step_robots())
-                    progressing = True
-                continue
-            elif ch == 's':
-                if progressing:
-                    print("Key 's' pressed, do nothing because fleet is already in progress")
-                else:
-                    print("Key 's' pressed, sending a step command to next position")
-                    fleet.send_targets(robot_network.step_robots())
-                    progressing = True
-                continue
-            elif ch == 'c':
-                print("Key 'c' pressed, cancel command issued")
-                progressing = False
-                fleet.cancel_all()
-                continue
-            elif ch == 'g':
-                print("Key 'g' pressed, get status")
-                fleet.print_status()
-                continue
-        
-        if progressing and fleet.all_reached():
-            if automatic:
-                fleet.send_targets(robot_network.step_robots())
-            else:
-                progressing = False
-
-        time.sleep(1)
-except KeyboardInterrupt:
-    print('Shutting down gracefully')
-finally:
-    # Restore terminal settings
-    termios.tcsetattr(fd, termios.TCSADRAIN, old_term_settings)
-    # talker.unadvertise()
-    fleet.terminate()
+app = FastAPI(lifespan=lifespan)
+app.include_router(graphql_app, prefix="/graphql")
