@@ -10,7 +10,7 @@ import redis.asyncio as redis
 from uuid import UUID
 
 from .types import Robot, Request
-from .deserializers import deserialize_robot, deserialize_request
+from .deserializers import deserialize_robot, deserialize_robot_with_jobs, deserialize_request
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ async def load_robot_lookup(r: redis.Redis) -> dict[str, Robot]:
         r: Redis connection
 
     Returns:
-        Dictionary mapping robot names to Robot objects
+        Dictionary mapping robot names to Robot objects (without jobs populated)
     """
     robot_keys = await r.keys("robot:*")
     robot_lookup = {}
@@ -32,6 +32,7 @@ async def load_robot_lookup(r: redis.Redis) -> dict[str, Robot]:
         data = await r.hgetall(key)
         if data:
             try:
+                # Use basic deserialize_robot (without jobs) for lookups
                 robot = deserialize_robot(data)
                 robot_lookup[robot.name] = robot
             except (KeyError, ValueError, json.JSONDecodeError):
@@ -42,14 +43,14 @@ async def load_robot_lookup(r: redis.Redis) -> dict[str, Robot]:
 
 async def load_robot_with_holdings(r: redis.Redis, name: str) -> Robot | None:
     """
-    Load a specific robot with its holdings populated.
+    Load a specific robot with its holdings and jobs populated.
 
     Args:
         r: Redis connection
         name: Robot name
 
     Returns:
-        Robot with holdings if found, None otherwise
+        Robot with holdings and jobs if found, None otherwise
     """
     data = await r.hgetall(f"robot:{name}")
 
@@ -57,7 +58,7 @@ async def load_robot_with_holdings(r: redis.Redis, name: str) -> Robot | None:
         return None
 
     try:
-        robot = deserialize_robot(data)
+        robot = await deserialize_robot_with_jobs(data, r)
     except (KeyError, ValueError, json.JSONDecodeError) as e:
         logger.error(f"Error deserializing robot {name}: {e}")
         return None
@@ -113,7 +114,7 @@ async def load_request(r: redis.Redis, uuid: UUID) -> Request | None:
 
 async def load_all_robots_with_holdings(r: redis.Redis) -> list[Robot]:
     """
-    Load all robots with their holdings populated.
+    Load all robots with their holdings and jobs populated.
 
     Args:
         r: Redis connection
@@ -121,8 +122,19 @@ async def load_all_robots_with_holdings(r: redis.Redis) -> list[Robot]:
     Returns:
         List of all robots in the system
     """
-    # Pass 1: Deserialize all robots (with empty holdings)
-    robot_lookup = await load_robot_lookup(r)
+    # Pass 1: Deserialize all robots with jobs
+    robot_keys = await r.keys("robot:*")
+    robot_lookup = {}
+
+    for key in robot_keys:
+        data = await r.hgetall(key)
+        if data:
+            try:
+                robot = await deserialize_robot_with_jobs(data, r)
+                robot_lookup[robot.name] = robot
+            except (KeyError, ValueError, json.JSONDecodeError) as e:
+                logger.error(f"Error deserializing robot {key}: {e}")
+                continue
 
     # Pass 2: Deserialize all requests and populate robot holdings
     request_keys = await r.keys("request:*")

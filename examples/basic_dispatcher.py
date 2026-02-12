@@ -131,7 +131,8 @@ async def send_pickup_delivery_request(
             uuid=pickup_job_uuid,
             operation=WarehouseOperation.PICKUP,
             nodes=pickup_node_objs,
-            target_cell=target_cell
+            target_cell=target_cell,
+            request_uuid=request_uuid
         )
         await robot_handler.send_job(pickup_job)
         print(f"Sent pickup job {pickup_job_uuid} to {robot_handler.name} (cell {target_cell})")
@@ -144,7 +145,8 @@ async def send_pickup_delivery_request(
             uuid=delivery_job_uuid,
             operation=WarehouseOperation.DELIVERY,
             nodes=delivery_node_objs,
-            target_cell=target_cell
+            target_cell=target_cell,
+            request_uuid=request_uuid
         )
         # Persist job to Redis
         from fleet_gateway.models import job_to_dict

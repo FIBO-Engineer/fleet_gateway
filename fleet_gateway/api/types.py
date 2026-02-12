@@ -58,6 +58,24 @@ class Job:
     operation: WarehouseOperation
     nodes: list[Node]
     target_cell: int
+    request_uuid: str | None
+
+    @strawberry.field
+    async def request(self, info: strawberry.types.Info) -> "Request | None":
+        """
+        Resolve request_uuid to full Request object.
+        Only fetches when client queries job.request
+        """
+        if not self.request_uuid:
+            return None
+
+        # Get Redis from context
+        import redis.asyncio as redis
+        from uuid import UUID
+        from .data_loaders import load_request
+
+        r: redis.Redis = info.context["redis"]
+        return await load_request(r, UUID(self.request_uuid))
 
 
 @strawberry.type

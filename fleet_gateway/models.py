@@ -120,7 +120,8 @@ def job_to_dict(job: Job) -> dict:
             }
             for n in job.nodes
         ]),
-        'target_cell': job.target_cell
+        'target_cell': job.target_cell,
+        'request_uuid': job.request_uuid or ''
     }
 
 
@@ -140,5 +141,6 @@ def dict_to_job(data: dict) -> Job:
             )
             for n in data['nodes']
         ],
-        target_cell=int(data.get('target_cell', -1))
+        target_cell=int(data.get('target_cell', -1)),
+        request_uuid=data.get('request_uuid') or None
     )

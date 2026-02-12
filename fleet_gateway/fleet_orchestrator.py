@@ -25,9 +25,6 @@ class FleetOrchestrator:
         }
         self.redis = redis_client
 
-        # Track job_uuid to request_uuid mapping
-        self.job_to_request_map: dict[str, str | None] = {}
-
         # Set orchestrator reference on each robot handler
         for handler in robot_handlers:
             handler.orchestrator = self
@@ -78,10 +75,6 @@ class FleetOrchestrator:
         if not handler:
             raise ValueError(f"Robot '{robot_name}' not found")
 
-        # Track job_uuid -> request_uuid mapping
-        if request_uuid:
-            self.job_to_request_map[job.uuid] = request_uuid
-
         # Compute target_cell based on operation
         target_cell = -1
         if job.operation == WarehouseOperation.PICKUP:
@@ -98,12 +91,13 @@ class FleetOrchestrator:
             if target_cell == -1:
                 raise RuntimeError(f"Request {request_uuid} not found in any cell of robot '{robot_name}'")
 
-        # Create final job with computed target_cell
+        # Create final job with computed target_cell and request_uuid
         job_with_cell = Job(
             uuid=job.uuid,
             operation=job.operation,
             nodes=job.nodes,
-            target_cell=target_cell
+            target_cell=target_cell,
+            request_uuid=request_uuid
         )
 
         # Persist job to Redis
@@ -191,8 +185,9 @@ class FleetOrchestrator:
         if not handler:
             return
 
-        # Lookup request_uuid from job mapping
-        request_uuid = self.job_to_request_map.pop(job_uuid, None)
+        # Fetch completed job to get request_uuid
+        completed_job = await self._fetch_job(job_uuid)
+        request_uuid = completed_job.request_uuid if completed_job else None
 
         # Update cell holdings based on operation
         from fleet_gateway.enums import WarehouseOperation
@@ -207,9 +202,8 @@ class FleetOrchestrator:
             # Fetch full job from Redis
             next_job = await self._fetch_job(next_job_uuid)
             if next_job:
-                # Look up request_uuid from job_to_request_map
-                request_uuid_for_next = self.job_to_request_map.get(next_job_uuid)
-                await self.assign_job(robot_name, next_job, request_uuid_for_next)
+                # request_uuid is already in the job
+                await self.assign_job(robot_name, next_job, next_job.request_uuid)
         # Future enhancement: Could rebalance fleet here
         # await self._rebalance_fleet()
 

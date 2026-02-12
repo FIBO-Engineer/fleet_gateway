@@ -50,12 +50,17 @@ def deserialize_job(data: dict) -> Job:
         uuid=data['uuid'],
         operation=WarehouseOperation(int(data['operation'])),
         nodes=[deserialize_node(n) for n in json.loads(data['nodes'])],
-        target_cell=int(data.get('target_cell', -1))
+        target_cell=int(data.get('target_cell', -1)),
+        request_uuid=data.get('request_uuid') or None
     )
 
 
 def deserialize_robot(data: dict) -> Robot:
-    """Convert Redis robot data to Robot type"""
+    """Convert Redis robot data to Robot type
+
+    Note: current_job and jobs are now stored as UUIDs in Redis.
+    These need to be fetched separately via deserialize_robot_with_jobs()
+    """
     return Robot(
         name=data['name'],
         robot_cell_heights=[float(h) for h in json.loads(data['robot_cell_heights'])],
@@ -63,8 +68,8 @@ def deserialize_robot(data: dict) -> Robot:
         mobile_base_status=deserialize_mobile_base_state(json.loads(data['mobile_base_status'])),
         piggyback_state=deserialize_piggyback_state(json.loads(data['piggyback_state'])),
         holdings=[],  # Will be populated separately if needed
-        current_job=deserialize_job(json.loads(data['current_job'])) if data.get('current_job') else None,
-        jobs=[deserialize_job(j) for j in json.loads(data['jobs'])] if data.get('jobs') else []
+        current_job=None,  # Will be populated by deserialize_robot_with_jobs() if needed
+        jobs=[]  # Will be populated by deserialize_robot_with_jobs() if needed
     )
 
 
@@ -77,3 +82,43 @@ def deserialize_request(data: dict, robot_lookup: dict[str, Robot]) -> Request:
         handler=robot_lookup.get(data['handler']),
         request_status=RequestStatus(int(data['request_status']))
     )
+
+
+async def deserialize_robot_with_jobs(data: dict, redis_client) -> Robot:
+    """
+    Convert Redis robot data to Robot type with jobs fetched from Redis.
+
+    Args:
+        data: Robot data from Redis
+        redis_client: Redis connection to fetch job details
+
+    Returns:
+        Robot with current_job and jobs populated
+    """
+    import redis.asyncio as redis
+
+    robot = deserialize_robot(data)
+
+    # Fetch current_job if it exists (stored as UUID string)
+    current_job_uuid = data.get('current_job')
+    if current_job_uuid:
+        job_data = await redis_client.hgetall(f"job:{current_job_uuid}")
+        if job_data:
+            # Convert bytes to strings
+            job_dict = {k.decode() if isinstance(k, bytes) else k:
+                       v.decode() if isinstance(v, bytes) else v
+                       for k, v in job_data.items()}
+            robot.current_job = deserialize_job(job_dict)
+
+    # Fetch queued jobs (stored as JSON array of UUIDs)
+    jobs_uuids = json.loads(data.get('jobs', '[]'))
+    for job_uuid in jobs_uuids:
+        job_data = await redis_client.hgetall(f"job:{job_uuid}")
+        if job_data:
+            # Convert bytes to strings
+            job_dict = {k.decode() if isinstance(k, bytes) else k:
+                       v.decode() if isinstance(v, bytes) else v
+                       for k, v in job_data.items()}
+            robot.jobs.append(deserialize_job(job_dict))
+
+    return robot
