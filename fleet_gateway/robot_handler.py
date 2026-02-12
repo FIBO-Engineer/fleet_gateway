@@ -9,9 +9,8 @@ from typing import TYPE_CHECKING
 import redis.asyncio as redis
 from roslibpy import ActionClient, Goal, Ros, Message, Topic
 
-from fleet_gateway.enums import WarehouseOperation, RobotStatus
-from fleet_gateway.models import RobotState, Job, job_to_dict, dict_to_job
-from fleet_gateway.robot_cell_manager import RobotCellManager
+from fleet_gateway.enums import RobotStatus
+from fleet_gateway.models import RobotState, Job, job_to_dict
 
 if TYPE_CHECKING:
     from fleet_gateway.fleet_orchestrator import FleetOrchestrator
@@ -47,9 +46,8 @@ class RobotHandler(Ros):
             robot_cell_heights=cell_heights
         )
 
-        # Cell manager for this robot's cells
-        self.cell_manager = RobotCellManager()
-        self.cell_manager.register_robot(name, cell_heights)
+        # Cell holdings: track which cell holds which request (None if free)
+        self.cell_holdings: list[str | None] = [None] * len(cell_heights)
 
         # Set up the action client
         self.warehouse_cmd_action_client = ActionClient(
@@ -107,19 +105,35 @@ class RobotHandler(Ros):
 
     def find_free_cell(self, shelf_height: float) -> int:
         """Find best free cell matching shelf height."""
-        return self.cell_manager.find_free_cell(self.state.name, shelf_height)
+        free_indices = (i for i, cell in enumerate(self.cell_holdings) if cell is None)
+        try:
+            return min(
+                free_indices,
+                key=lambda i: abs(self.state.robot_cell_heights[i] - shelf_height)
+            )
+        except ValueError:
+            return -1  # No free cell
 
     def find_cell_with_request(self, request_uuid: str) -> int:
         """Find cell index holding the given request."""
-        return self.cell_manager.find_cell_with_request(self.state.name, request_uuid)
+        try:
+            return self.cell_holdings.index(request_uuid)
+        except ValueError:
+            return -1
 
     def allocate_cell(self, cell_idx: int, request_uuid: str):
         """Allocate a cell for a request."""
-        self.cell_manager.allocate_cell(self.state.name, cell_idx, request_uuid)
+        if 0 <= cell_idx < len(self.cell_holdings):
+            self.cell_holdings[cell_idx] = request_uuid
 
     def release_cell(self, cell_idx: int):
         """Release a cell after delivery."""
-        self.cell_manager.release_cell(self.state.name, cell_idx)
+        if 0 <= cell_idx < len(self.cell_holdings):
+            self.cell_holdings[cell_idx] = None
+
+    def get_occupied_cells(self) -> list[bool]:
+        """Get list of which cells are occupied."""
+        return [cell is not None for cell in self.cell_holdings]
 
     async def send_job(self, job: 'Job') -> bool:
         """Send job to robot via ROS action."""
