@@ -12,6 +12,7 @@ import json
 from uuid import UUID, uuid4
 import redis.asyncio as redis
 from fleet_gateway.robot_handler import RobotHandler
+from fleet_gateway.job_handler import JobHandler
 from fleet_gateway.models import Job, Node
 from fleet_gateway.enums import WarehouseOperation, RequestStatus, NodeType
 
@@ -148,12 +149,11 @@ async def send_pickup_delivery_request(
             target_cell=target_cell,
             request_uuid=request_uuid
         )
-        # Persist job to Redis
-        from fleet_gateway.models import job_to_dict
-        job_data = job_to_dict(delivery_job)
-        await r.hset(f"job:{delivery_job_uuid}", mapping=job_data)
-        # Store only UUID in state
-        robot_handler.state.jobs.append(delivery_job_uuid)
+        # Persist job to Redis using JobHandler
+        job_handler = JobHandler(r)
+        await job_handler.upsert_job(delivery_job)
+        # Store full Job object in state
+        robot_handler.state.jobs.append(delivery_job)
         print(f"Queued delivery job {delivery_job_uuid} for {robot_handler.name} (cell {target_cell})")
 
     except RuntimeError as e:

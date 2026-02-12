@@ -36,8 +36,8 @@ class Mutation:
         Returns:
             SubmitResult with success status, message, and created request UUIDs
         """
-        graph_oracle: GraphOracle = info.context["graph_oracle"]
-        graph_id: int = info.context["graph_id"]
+        # graph_oracle: GraphOracle = info.context["graph_oracle"]
+        # graph_id: int = info.context["graph_id"]
         fleet: FleetOrchestrator = info.context["fleet"]
 
         try:
@@ -45,8 +45,6 @@ class Mutation:
             request_uuids = await fleet.submit_requests_and_assignments(
                 requests=requests,
                 assignments=assignments,
-                graph_oracle=graph_oracle,
-                graph_id=graph_id
             )
 
             return SubmitResult(

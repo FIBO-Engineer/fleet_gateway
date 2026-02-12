@@ -55,8 +55,8 @@ class RobotState:
     """
     Internal robot state used by RobotHandler.
 
-    Stores only UUIDs/IDs for jobs and requests.
-    Full objects fetched from Redis via job:{uuid} or request:{uuid} when needed.
+    Jobs stored as full objects in memory for fast access.
+    Persisted to Redis as UUIDs (jobs stored separately at job:{uuid}).
     """
     name: str
     robot_cell_heights: list[float]
@@ -73,8 +73,8 @@ class RobotState:
         axis_2=0.0,
         gripper=False
     ))
-    current_job: str | None = None  # Job UUID
-    jobs: list[str] = field(default_factory=list)  # Job UUIDs
+    current_job: Job | None = None  # Full Job object in memory
+    jobs: list[Job] = field(default_factory=list)  # Full Job objects in memory
     cell_holdings: list[str | None] = field(default_factory=list)  # Request UUIDs
 
 

@@ -37,7 +37,7 @@ class RobotHandler(Ros):
 
         # Infrastructure (RobotHandler-specific)
         self.redis_client: redis.Redis = redis_client
-        self.current_goal: Goal | None = None
+        self.ros_action_goal: Goal | None = None
         self.orchestrator: FleetOrchestrator | None = None  # Set by FleetOrchestrator after initialization
 
         # Robot state (all operational state in one place)
@@ -133,6 +133,29 @@ class RobotHandler(Ros):
         """Get list of which cells are occupied."""
         return [cell is not None for cell in self.state.cell_holdings]
 
+    def find_target_cell(self, job: Job) -> int:
+        """Find appropriate target cell for job based on operation type"""
+        from fleet_gateway.enums import WarehouseOperation
+
+        match job.operation:
+            case WarehouseOperation.PICKUP:
+                shelf_height = job.nodes[-1].height if job.nodes[-1].height is not None else 0.0
+                target_cell = self.find_free_cell(shelf_height)
+                if target_cell == -1:
+                    raise RuntimeError(f"No free cell available for pickup on robot '{self.state.name}'")
+                return target_cell
+
+            case WarehouseOperation.DELIVERY:
+                if not job.request_uuid:
+                    raise RuntimeError("request_uuid is required for DELIVERY operation")
+                target_cell = self.find_cell_with_request(job.request_uuid)
+                if target_cell == -1:
+                    raise RuntimeError(f"Request {job.request_uuid} not found in any cell of robot '{self.state.name}'")
+                return target_cell
+
+            case _:
+                return -1  # TRAVEL jobs don't need a cell
+
     async def send_job(self, job: Job) -> bool:
         """Send job to robot via ROS action."""
         if self.state.current_job is not None:
@@ -156,8 +179,8 @@ class RobotHandler(Ros):
 
         # Create goal
         goal = Goal(self.warehouse_cmd_action_client, goal_msg)
-        self.current_goal = goal
-        self.state.current_job = job.uuid  # Store only UUID
+        self.ros_action_goal = goal
+        self.state.current_job = job  # Store full Job object
 
         # Set robot status to BUSY
         self.state.robot_status = RobotStatus.BUSY
@@ -165,7 +188,7 @@ class RobotHandler(Ros):
 
         # Send goal with callbacks
         def on_result(result):
-            asyncio.create_task(self._on_job_result(result, job.operation.value, job.target_cell))
+            asyncio.create_task(self._on_job_result(result))
 
         def on_feedback(feedback):
             asyncio.create_task(self._on_job_feedback(feedback))
@@ -176,14 +199,21 @@ class RobotHandler(Ros):
         goal.send(on_result=on_result, on_feedback=on_feedback, on_error=on_error)
         return True
 
-    async def _on_job_result(self, result, operation: int, target_cell: int):
+    async def _on_job_result(self, result):
         """Handle job completion result"""
-        job_uuid = self.state.current_job if self.state.current_job else 'unknown'
-        logger.info(f"[{self.state.name}] Job {job_uuid} completed with result: {result}")
+        logger.info(f"[{self.state.name}] Job {self.state.current_job.uuid} completed with result: {result}")
+
+        # Update cell holdings based on operation
+        from fleet_gateway.enums import WarehouseOperation
+        if self.state.current_job.target_cell >= 0:
+            if self.state.current_job.operation == WarehouseOperation.PICKUP:
+                self.allocate_cell(self.state.current_job.target_cell, self.state.current_job.request_uuid)
+            elif self.state.current_job.operation == WarehouseOperation.DELIVERY:
+                self.release_cell(self.state.current_job.target_cell)
 
         # Clear current job
         self.state.current_job = None
-        self.current_goal = None
+        self.ros_action_goal = None
 
         # Set robot status to IDLE
         self.state.robot_status = RobotStatus.IDLE
@@ -194,12 +224,7 @@ class RobotHandler(Ros):
 
         # Notify orchestrator to handle next job (if orchestrator is set)
         if self.orchestrator:
-            await self.orchestrator.on_robot_job_completed(
-                self.state.name,
-                job_uuid,
-                operation,
-                target_cell
-            )
+            await self.orchestrator.on_robot_job_completed(self)
 
     async def _on_job_feedback(self, feedback):
         """Handle job feedback"""
@@ -214,27 +239,39 @@ class RobotHandler(Ros):
         """Handle job error"""
         logger.error(f"[{self.state.name}] Job error: {error}")
         self.state.current_job = None
-        self.current_goal = None
+        self.ros_action_goal = None
         self.state.robot_status = RobotStatus.ERROR
         await self._persist_to_redis()
         await self._publish_update()
 
-    async def cancel_current_job(self) -> None:
+    async def cancel_current_job(self) -> str:
         """Cancel the currently executing job"""
-        if self.current_goal is not None:
-            self.current_goal.cancel()
+        if self.ros_action_goal is not None:
+            job_id = self.state.current_job.uuid
+            self.ros_action_goal.cancel()
             self.state.current_job = None
-            self.current_goal = None
+            self.ros_action_goal = None
             self.state.robot_status = RobotStatus.IDLE
             await self._persist_to_redis()
             await self._publish_update()
+            return job_id
         else:
-            raise RuntimeError("No job to cancel")
+            return -1
+    
+    async def clear_job_queue(self) -> int:
+        """Clear all queued jobs and return count"""
+        count = len(self.state.jobs)
+        self.state.jobs.clear()
+        await self._persist_to_redis()
+        await self._publish_update()
+        return count
 
     async def set_inactive(self) -> None:
         """Manually set robot to INACTIVE status (user disabled)"""
-        if self.current_goal is not None:
-            await self.cancel_current_job()
+        if self.ros_action_goal is not None:
+            # await self.cancel_current_job()
+            # Won't be inactive if there's job to do
+            return
         self.state.robot_status = RobotStatus.INACTIVE
         await self._persist_to_redis()
         await self._publish_update()
@@ -247,12 +284,16 @@ class RobotHandler(Ros):
             await self._publish_update()
 
     async def _persist_to_redis(self):
-        """Save robot state to Redis"""
+        """Save robot state to Redis (jobs stored as UUIDs, full objects kept in memory)"""
         # Convert entire state to dict for Redis
         state_dict = asdict(self.state)
 
         # Convert enum to value for Redis storage
         state_dict['robot_status'] = str(self.state.robot_status.value)
+
+        # Convert jobs to UUIDs for Redis (keep full objects in memory)
+        current_job_uuid = self.state.current_job.uuid if self.state.current_job else ''
+        job_uuids = [job.uuid for job in self.state.jobs]
 
         robot_data = {
             'name': state_dict['name'],
@@ -260,8 +301,8 @@ class RobotHandler(Ros):
             'robot_status': state_dict['robot_status'],
             'mobile_base_status': json.dumps(state_dict['mobile_base_status']),
             'piggyback_state': json.dumps(state_dict['piggyback_state']),
-            'current_job': self.state.current_job or '',  # Just UUID string
-            'jobs': json.dumps(self.state.jobs),  # List of UUID strings
+            'current_job': current_job_uuid,
+            'jobs': json.dumps(job_uuids),
             'cell_holdings': json.dumps(state_dict['cell_holdings'])
         }
 
