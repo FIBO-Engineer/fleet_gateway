@@ -70,7 +70,6 @@ class RobotState:
         axis_2=0.0,
         gripper=False
     ))
-    holding_request_uuids: list[str | None] = field(default_factory=list)
     current_job: dict | None = None
     jobs: list[dict] = field(default_factory=list)
 

@@ -10,6 +10,7 @@ from strawberry.fastapi import GraphQLRouter
 
 from fleet_gateway.robot_handler import RobotHandler
 from fleet_gateway.graph_oracle import GraphOracle
+from fleet_gateway.fleet_orchestrator import FleetOrchestrator
 from fleet_gateway.api import schema
 
 # Load environment variables
@@ -23,11 +24,11 @@ SUPABASE_KEY = os.getenv('SUPABASE_KEY', '')
 GRAPH_ID = int(os.getenv('GRAPH_ID', '1'))
 ROBOTS_CONFIG = json.loads(os.getenv('ROBOTS_CONFIG', '{}'))
 
-async def handler_connect_loop(robot_handlers: list[RobotHandler], stop_event: asyncio.Event):
+async def handler_connect_loop(fleet: FleetOrchestrator, stop_event: asyncio.Event):
     while not stop_event.is_set():
-        for rh in robot_handlers:
-            if not rh.is_connected():
-                rh.connect()
+        for robot_handler in fleet.robots.values():
+            if not robot_handler.is_connected():
+                robot_handler.connect()
 
         # Just delay for 1 second or stop_event is triggered
         with suppress(asyncio.TimeoutError):
@@ -48,7 +49,7 @@ async def lifespan(app: FastAPI):
     app.state.graph_id = GRAPH_ID
 
     # Initialize robot handlers from config
-    app.state.robot_handlers = [
+    robot_handlers = [
         RobotHandler(
             name=robot_name,
             host_ip=config['host'],
@@ -59,15 +60,15 @@ async def lifespan(app: FastAPI):
         for robot_name, config in ROBOTS_CONFIG.items()
     ]
 
-    # Create robot lookup dict
-    app.state.robot_lookup = {rh.state.name: rh for rh in app.state.robot_handlers}
-
     # Initialize robot states in Redis
-    for robot_handler in app.state.robot_handlers:
+    for robot_handler in robot_handlers:
         await robot_handler.initialize_in_redis()
 
+    # Create fleet orchestrator (central coordinator)
+    app.state.fleet = FleetOrchestrator(robot_handlers, app.state.redis)
+
     stop_event = asyncio.Event()
-    auto_connector = asyncio.create_task(handler_connect_loop(app.state.robot_handlers, stop_event))
+    auto_connector = asyncio.create_task(handler_connect_loop(app.state.fleet, stop_event))
     try:
         yield
     finally:
@@ -81,7 +82,7 @@ async def get_context(request):
         "redis": request.app.state.redis,
         "graph_oracle": request.app.state.graph_oracle,
         "graph_id": request.app.state.graph_id,
-        "robot_lookup": request.app.state.robot_lookup,
+        "fleet": request.app.state.fleet,
     }
 
 # Create GraphQL router with context getter

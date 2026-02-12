@@ -11,7 +11,7 @@ from uuid import uuid4
 
 from fleet_gateway import enums
 from fleet_gateway.graph_oracle import GraphOracle
-from fleet_gateway.robot_handler import RobotHandler
+from fleet_gateway.fleet_orchestrator import FleetOrchestrator
 
 from .types import RequestInput, AssignmentInput, SubmitResult
 from .data_loaders import get_robot_current_node
@@ -46,7 +46,7 @@ class Mutation:
         r: redis.Redis = info.context["redis"]
         graph_oracle: GraphOracle = info.context["graph_oracle"]
         graph_id: int = info.context["graph_id"]
-        robot_lookup: dict[str, RobotHandler] = info.context["robot_lookup"]
+        fleet: FleetOrchestrator = info.context["fleet"]
 
         created_request_uuids = []
 
@@ -87,9 +87,8 @@ class Mutation:
                 robot_name = assignment.robot
                 target_node_ids = assignment.jobs
 
-                # Get robot handler
-                robot_handler = robot_lookup.get(robot_name)
-                if not robot_handler:
+                # Verify robot exists
+                if fleet.get_robot(robot_name) is None:
                     return SubmitResult(
                         success=False,
                         message=f"Robot '{robot_name}' not found",
@@ -161,14 +160,8 @@ class Mutation:
                         'nodes': job_nodes
                     }
 
-                    if request_uuid:
-                        job['request_uuid'] = request_uuid
-
-                    # Send job to robot (or queue if busy)
-                    if robot_handler.state.current_job is None:
-                        await robot_handler.send_job(job, request_uuid)
-                    else:
-                        robot_handler.state.jobs.append(job)
+                    # Assign job to robot via orchestrator (handles queuing automatically)
+                    await fleet.assign_job(robot_name, job, request_uuid)
 
                     # Update current position for next path calculation
                     current_node_id = target_node_id

@@ -68,6 +68,9 @@ async def send_pickup_delivery_request(
     """
     Send a complete pickup and delivery request to a robot.
 
+    NOTE: This example manually manages cell allocation. In production,
+    use FleetOrchestrator which handles this automatically.
+
     Args:
         robot_handler: Robot handler instance
         r: Redis client
@@ -84,25 +87,45 @@ async def send_pickup_delivery_request(
 
     print(f"Created request {request_uuid} for robot {robot_handler.name}")
 
-    # Send pickup job
-    pickup_job = {
-        'operation': WarehouseOperation.PICKUP.value,
-        'nodes': pickup_nodes
-    }
+    # Manually track cell holdings (normally done by FleetOrchestrator)
+    cell_holdings: list[str | None] = [None] * len(robot_handler.state.robot_cell_heights)
 
     try:
-        await robot_handler.send_job(pickup_job, request_uuid)
-        print(f"Sent pickup job to {robot_handler.name}")
+        # Find free cell for pickup
+        shelf_height = pickup_nodes[-1].get('height', 0.0)
+        occupied = [cell is not None for cell in cell_holdings]
+        target_cell = robot_handler.find_free_cell(shelf_height, occupied)
+        if target_cell == -1:
+            raise RuntimeError("No free cell available for pickup")
 
-        # Queue delivery job (will execute after pickup completes)
-        # Important: Must pass the same request_uuid so it can find the correct cell
+        # Generate job UUIDs for tracking
+        pickup_job_uuid = str(uuid4())
+        delivery_job_uuid = str(uuid4())
+
+        # Send pickup job with job_uuid and target_cell
+        pickup_job = {
+            'job_uuid': pickup_job_uuid,
+            'operation': WarehouseOperation.PICKUP.value,
+            'nodes': pickup_nodes,
+            'request_uuid': request_uuid,  # Only for manual tracking in this example
+            'target_cell': target_cell
+        }
+        await robot_handler.send_job(pickup_job)
+        print(f"Sent pickup job {pickup_job_uuid} to {robot_handler.name} (cell {target_cell})")
+
+        # Update local tracking
+        cell_holdings[target_cell] = request_uuid
+
+        # Queue delivery job with job_uuid and same target_cell
         delivery_job = {
+            'job_uuid': delivery_job_uuid,
             'operation': WarehouseOperation.DELIVERY.value,
             'nodes': delivery_nodes,
-            'request_uuid': request_uuid  # Store UUID in job for later use
+            'request_uuid': request_uuid,  # Only for manual tracking in this example
+            'target_cell': target_cell
         }
-        robot_handler.job_queue.append(delivery_job)
-        print(f"Queued delivery job for {robot_handler.name}")
+        robot_handler.state.jobs.append(delivery_job)
+        print(f"Queued delivery job {delivery_job_uuid} for {robot_handler.name} (cell {target_cell})")
 
     except RuntimeError as e:
         print(f"Failed to send job: {e}")
@@ -119,14 +142,19 @@ async def send_travel_job(robot_handler: RobotHandler, waypoint_nodes: list[dict
         robot_handler: Robot handler instance
         waypoint_nodes: List of waypoint nodes to travel through
     """
+    # Generate job UUID for tracking
+    job_uuid = str(uuid4())
+
     travel_job = {
+        'job_uuid': job_uuid,
         'operation': WarehouseOperation.TRAVEL.value,
-        'nodes': waypoint_nodes
+        'nodes': waypoint_nodes,
+        'target_cell': -1  # No cell needed for TRAVEL
     }
 
     try:
         await robot_handler.send_job(travel_job)
-        print(f"Sent travel job to {robot_handler.name}")
+        print(f"Sent travel job {job_uuid} to {robot_handler.name}")
     except RuntimeError as e:
         print(f"Failed to send travel job: {e}")
 

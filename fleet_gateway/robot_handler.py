@@ -1,12 +1,18 @@
+from __future__ import annotations
+
 import asyncio
 import json
 from dataclasses import asdict
+from typing import TYPE_CHECKING
 
 import redis.asyncio as redis
 from roslibpy import ActionClient, Goal, Ros, Message, Topic
 
 from fleet_gateway.enums import WarehouseOperation, RobotStatus
 from fleet_gateway.models import RobotState
+
+if TYPE_CHECKING:
+    from fleet_gateway.fleet_orchestrator import FleetOrchestrator
 
 
 class RobotHandler(Ros):
@@ -29,12 +35,12 @@ class RobotHandler(Ros):
         # Infrastructure (RobotHandler-specific)
         self.redis_client: redis.Redis = redis_client
         self.current_goal: Goal | None = None
+        self.orchestrator: FleetOrchestrator | None = None  # Set by FleetOrchestrator after initialization
 
         # Robot state (all operational state in one place)
         self.state = RobotState(
             name=name,
-            robot_cell_heights=cell_heights,
-            holding_request_uuids=[None for _ in range(len(cell_heights))]
+            robot_cell_heights=cell_heights
         )
 
         # Set up the action client
@@ -89,28 +95,29 @@ class RobotHandler(Ros):
             # Persist to Redis asynchronously
             asyncio.create_task(self._persist_to_redis())
 
-    def find_free_cell(self, shelf_height: float) -> int:
-        """Find the best free cell for a given shelf height"""
-        free_indices = (i for i, uuid in enumerate(self.state.holding_request_uuids) if uuid is None)
+    def find_free_cell(self, shelf_height: float, occupied_cells: list[bool]) -> int:
+        """
+        Find the best free cell for a given shelf height.
+
+        Args:
+            shelf_height: Height of the shelf to pick up
+            occupied_cells: List of booleans indicating which cells are occupied
+
+        Returns:
+            Index of best free cell, or -1 if no free cell available
+        """
+        free_indices = (i for i, occupied in enumerate(occupied_cells) if not occupied)
         try:
             return min(free_indices, key=lambda i: abs(self.state.robot_cell_heights[i] - shelf_height))
         except ValueError:
             return -1  # No free cell
 
-    def find_storing_cell(self, request_uuid: str) -> int:
-        """Find the cell storing a specific request by UUID"""
-        for i, uuid in enumerate(self.state.holding_request_uuids):
-            if uuid == request_uuid:
-                return i
-        return -1
-
-    async def send_job(self, job: dict, request_uuid: str | None = None) -> bool:
+    async def send_job(self, job: dict) -> bool:
         """
         Send a job to the robot via ROS action.
 
         Args:
-            job: Job dictionary with 'operation' (int or WarehouseOperation) and 'nodes' fields
-            request_uuid: UUID of the request this job belongs to (required for PICKUP/DELIVERY)
+            job: Job dictionary with 'operation', 'nodes', and 'target_cell' fields
 
         Returns:
             True if job was sent successfully, False otherwise
@@ -127,18 +134,8 @@ class RobotHandler(Ros):
 
         nodes = job['nodes']
 
-        # Determine target cell based on operation
-        target_cell: int = -1
-        if operation_value == WarehouseOperation.PICKUP.value:
-            target_cell = self.find_free_cell(nodes[-1].get('height', 0.0))
-            if target_cell == -1:
-                raise RuntimeError("No free cell available for pickup")
-        elif operation_value == WarehouseOperation.DELIVERY.value:
-            if not request_uuid:
-                raise RuntimeError("request_uuid is required for DELIVERY operation")
-            target_cell = self.find_storing_cell(request_uuid)
-            if target_cell == -1:
-                raise RuntimeError(f"Request {request_uuid} not found in any cell")
+        # Get target_cell from job (provided by FleetOrchestrator)
+        target_cell: int = job.get('target_cell', -1)
 
         # Convert nodes to ROS message format
         ros_nodes = [
@@ -170,7 +167,7 @@ class RobotHandler(Ros):
 
         # Send goal with callbacks
         def on_result(result):
-            asyncio.create_task(self._on_job_result(result, operation, target_cell, request_uuid))
+            asyncio.create_task(self._on_job_result(result, operation_value, target_cell))
 
         def on_feedback(feedback):
             asyncio.create_task(self._on_job_feedback(feedback))
@@ -181,15 +178,12 @@ class RobotHandler(Ros):
         goal.send(on_result=on_result, on_feedback=on_feedback, on_error=on_error)
         return True
 
-    async def _on_job_result(self, result, operation: int, target_cell: int, request_uuid: str | None):
+    async def _on_job_result(self, result, operation: int, target_cell: int):
         """Handle job completion result"""
         print(f"[{self.state.name}] Job completed with result: {result}")
 
-        # Update holdings based on operation
-        if operation == WarehouseOperation.PICKUP.value and target_cell >= 0:
-            self.state.holding_request_uuids[target_cell] = request_uuid
-        elif operation == WarehouseOperation.DELIVERY.value and target_cell >= 0:
-            self.state.holding_request_uuids[target_cell] = None
+        # Extract job_uuid from completed job
+        job_uuid = self.state.current_job.get('job_uuid', 'unknown') if self.state.current_job else 'unknown'
 
         # Clear current job
         self.state.current_job = None
@@ -202,12 +196,14 @@ class RobotHandler(Ros):
         await self._persist_to_redis()
         await self._publish_update()
 
-        # Process next job in queue if available
-        if self.state.jobs:
-            next_job = self.state.jobs.pop(0)
-            # Extract request_uuid if it was stored in the job
-            next_request_uuid = next_job.pop('request_uuid', None)
-            await self.send_job(next_job, next_request_uuid)
+        # Notify orchestrator to handle next job (if orchestrator is set)
+        if self.orchestrator:
+            await self.orchestrator.on_robot_job_completed(
+                self.state.name,
+                job_uuid,
+                operation,
+                target_cell
+            )
 
     async def _on_job_feedback(self, feedback):
         """Handle job feedback"""
