@@ -47,6 +47,7 @@ class Job:
     operation: WarehouseOperation
     nodes: list[Node]
     target_cell: int = -1  # Cell index for PICKUP/DELIVERY, -1 for TRAVEL
+    request_uuid: str | None = None  # Parent request UUID (None for TRAVEL jobs)
 
 
 @dataclass
@@ -54,8 +55,8 @@ class RobotState:
     """
     Internal robot state used by RobotHandler.
 
-    Jobs are now typed Job objects for type safety.
-    Converted to/from dicts only at Redis serialization boundaries.
+    Stores only UUIDs/IDs for jobs and requests.
+    Full objects fetched from Redis via job:{uuid} or request:{uuid} when needed.
     """
     name: str
     robot_cell_heights: list[float]
@@ -72,8 +73,9 @@ class RobotState:
         axis_2=0.0,
         gripper=False
     ))
-    current_job: Job | None = None
-    jobs: list[Job] = field(default_factory=list)
+    current_job: str | None = None  # Job UUID
+    jobs: list[str] = field(default_factory=list)  # Job UUIDs
+    cell_holdings: list[str | None] = field(default_factory=list)  # Request UUIDs
 
 
 @dataclass

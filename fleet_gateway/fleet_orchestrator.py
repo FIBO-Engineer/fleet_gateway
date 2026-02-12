@@ -61,7 +61,7 @@ class FleetOrchestrator:
         self,
         robot_name: str,
         job: Job,
-        request_uuid: str | None = None
+        request_uuid: str | None = None # None for TRAVEL task
     ) -> bool:
         """
         Assign job to robot (queues if busy, allocates cells).
@@ -106,12 +106,15 @@ class FleetOrchestrator:
             target_cell=target_cell
         )
 
+        # Persist job to Redis
+        await self._persist_job(job_with_cell)
+
         # If robot is idle, send job immediately
         if handler.state.current_job is None:
             await handler.send_job(job_with_cell)
         else:
-            # Robot is busy, queue the job
-            handler.state.jobs.append(job_with_cell)
+            # Robot is busy, queue the job (store UUID only)
+            handler.state.jobs.append(job_with_cell.uuid)
 
         return True
 
@@ -200,10 +203,13 @@ class FleetOrchestrator:
 
         # Process next queued job if available
         if handler.state.jobs:
-            next_job = handler.state.jobs.pop(0)
-            # Look up request_uuid from job_to_request_map
-            request_uuid_for_next = self.job_to_request_map.get(next_job.uuid)
-            await self.assign_job(robot_name, next_job, request_uuid_for_next)
+            next_job_uuid = handler.state.jobs.pop(0)
+            # Fetch full job from Redis
+            next_job = await self._fetch_job(next_job_uuid)
+            if next_job:
+                # Look up request_uuid from job_to_request_map
+                request_uuid_for_next = self.job_to_request_map.get(next_job_uuid)
+                await self.assign_job(robot_name, next_job, request_uuid_for_next)
         # Future enhancement: Could rebalance fleet here
         # await self._rebalance_fleet()
 
@@ -339,3 +345,24 @@ class FleetOrchestrator:
             return mobile_base_status['last_seen']['id']
         except (KeyError, ValueError, json.JSONDecodeError):
             return None
+
+    async def _persist_job(self, job: Job) -> None:
+        """Persist job to Redis at job:{uuid}."""
+        from fleet_gateway.models import job_to_dict
+        job_data = job_to_dict(job)
+        await self.redis.hset(f"job:{job.uuid}", mapping=job_data)
+
+    async def _fetch_job(self, job_uuid: str) -> Job | None:
+        """Fetch job from Redis by UUID."""
+        from fleet_gateway.models import dict_to_job
+        job_data = await self.redis.hgetall(f"job:{job_uuid}")
+        if not job_data:
+            return None
+        # Convert bytes to strings if needed
+        job_dict = {k.decode() if isinstance(k, bytes) else k:
+                    v.decode() if isinstance(v, bytes) else v
+                    for k, v in job_data.items()}
+        # Parse nodes JSON string
+        import json
+        job_dict['nodes'] = json.loads(job_dict['nodes'])
+        return dict_to_job(job_dict)

@@ -12,7 +12,8 @@ import json
 from uuid import UUID, uuid4
 import redis.asyncio as redis
 from fleet_gateway.robot_handler import RobotHandler
-from fleet_gateway.enums import WarehouseOperation, RequestStatus
+from fleet_gateway.models import Job, Node
+from fleet_gateway.enums import WarehouseOperation, RequestStatus, NodeType
 
 
 async def create_request_in_redis(
@@ -93,8 +94,7 @@ async def send_pickup_delivery_request(
     try:
         # Find free cell for pickup
         shelf_height = pickup_nodes[-1].get('height', 0.0)
-        occupied = [cell is not None for cell in cell_holdings]
-        target_cell = robot_handler.find_free_cell(shelf_height, occupied)
+        target_cell = robot_handler.find_free_cell(shelf_height)
         if target_cell == -1:
             raise RuntimeError("No free cell available for pickup")
 
@@ -102,29 +102,56 @@ async def send_pickup_delivery_request(
         pickup_job_uuid = str(uuid4())
         delivery_job_uuid = str(uuid4())
 
-        # Send pickup job with uuid and target_cell
-        pickup_job = {
-            'uuid': pickup_job_uuid,
-            'operation': WarehouseOperation.PICKUP.value,
-            'nodes': pickup_nodes,
-            'request_uuid': request_uuid,  # Only for manual tracking in this example
-            'target_cell': target_cell
-        }
+        # Convert node dicts to Node objects
+        pickup_node_objs = [
+            Node(
+                id=n['id'],
+                alias=n.get('alias'),
+                x=n['x'],
+                y=n['y'],
+                height=n.get('height'),
+                node_type=NodeType(n['node_type'])
+            )
+            for n in pickup_nodes
+        ]
+        delivery_node_objs = [
+            Node(
+                id=n['id'],
+                alias=n.get('alias'),
+                x=n['x'],
+                y=n['y'],
+                height=n.get('height'),
+                node_type=NodeType(n['node_type'])
+            )
+            for n in delivery_nodes
+        ]
+
+        # Create pickup job
+        pickup_job = Job(
+            uuid=pickup_job_uuid,
+            operation=WarehouseOperation.PICKUP,
+            nodes=pickup_node_objs,
+            target_cell=target_cell
+        )
         await robot_handler.send_job(pickup_job)
         print(f"Sent pickup job {pickup_job_uuid} to {robot_handler.name} (cell {target_cell})")
 
         # Update local tracking
         cell_holdings[target_cell] = request_uuid
 
-        # Queue delivery job with uuid and same target_cell
-        delivery_job = {
-            'uuid': delivery_job_uuid,
-            'operation': WarehouseOperation.DELIVERY.value,
-            'nodes': delivery_nodes,
-            'request_uuid': request_uuid,  # Only for manual tracking in this example
-            'target_cell': target_cell
-        }
-        robot_handler.state.jobs.append(delivery_job)
+        # Create and queue delivery job (store UUID only)
+        delivery_job = Job(
+            uuid=delivery_job_uuid,
+            operation=WarehouseOperation.DELIVERY,
+            nodes=delivery_node_objs,
+            target_cell=target_cell
+        )
+        # Persist job to Redis
+        from fleet_gateway.models import job_to_dict
+        job_data = job_to_dict(delivery_job)
+        await r.hset(f"job:{delivery_job_uuid}", mapping=job_data)
+        # Store only UUID in state
+        robot_handler.state.jobs.append(delivery_job_uuid)
         print(f"Queued delivery job {delivery_job_uuid} for {robot_handler.name} (cell {target_cell})")
 
     except RuntimeError as e:

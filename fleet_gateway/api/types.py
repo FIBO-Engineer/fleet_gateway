@@ -54,10 +54,10 @@ class PiggybackState:
 @strawberry.type
 class Job:
     """Robot job with operation type and path nodes"""
+    uuid: str | None
     operation: WarehouseOperation
     nodes: list[Node]
     target_cell: int
-    uuid: str | None
 
 
 @strawberry.type
