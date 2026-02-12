@@ -47,8 +47,10 @@ def deserialize_piggyback_state(data: dict) -> PiggybackState:
 def deserialize_job(data: dict) -> Job:
     """Convert Redis job data to Job type"""
     return Job(
+        uuid=data['uuid'],
         operation=WarehouseOperation(int(data['operation'])),
-        nodes=[deserialize_node(n) for n in json.loads(data['nodes'])]
+        nodes=[deserialize_node(n) for n in json.loads(data['nodes'])],
+        target_cell=int(data.get('target_cell', -1))
     )
 
 

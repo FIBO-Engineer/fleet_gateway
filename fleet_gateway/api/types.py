@@ -56,6 +56,8 @@ class Job:
     """Robot job with operation type and path nodes"""
     operation: WarehouseOperation
     nodes: list[Node]
+    target_cell: int
+    uuid: str | None
 
 
 @strawberry.type

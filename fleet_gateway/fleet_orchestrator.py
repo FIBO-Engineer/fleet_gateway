@@ -11,9 +11,8 @@ import redis.asyncio as redis
 from uuid import uuid4
 
 from fleet_gateway.robot_handler import RobotHandler
-from fleet_gateway.robot_cell_manager import RobotCellManager
-from fleet_gateway.models import RobotState
-from fleet_gateway.enums import RobotStatus, WarehouseOperation, RequestStatus
+from fleet_gateway.models import RobotState, Job, Node
+from fleet_gateway.enums import RobotStatus, WarehouseOperation, RequestStatus, NodeType
 
 
 class FleetOrchestrator:
@@ -25,9 +24,6 @@ class FleetOrchestrator:
             handler.state.name: handler for handler in robot_handlers
         }
         self.redis = redis_client
-
-        # Cell allocation manager
-        self.cell_manager = RobotCellManager(robot_handlers)
 
         # Track job_uuid to request_uuid mapping
         self.job_to_request_map: dict[str, str | None] = {}
@@ -64,57 +60,58 @@ class FleetOrchestrator:
     async def assign_job(
         self,
         robot_name: str,
-        job: dict,
+        job: Job,
         request_uuid: str | None = None
     ) -> bool:
-        """Assign job to robot (queues if busy, generates job_uuid, allocates cells)."""
+        """
+        Assign job to robot (queues if busy, allocates cells).
+
+        Args:
+            robot_name: Target robot name
+            job: Job object with uuid, operation, nodes, target_cell
+            request_uuid: Optional warehouse request UUID for tracking
+
+        Returns:
+            True if job was assigned/queued successfully
+        """
         handler = self.get_robot(robot_name)
         if not handler:
             raise ValueError(f"Robot '{robot_name}' not found")
 
-        # Prepare job with metadata
-        job_prepared = job.copy()
-
-        # Generate unique job UUID for tracking
-        job_uuid = str(uuid4())
-        job_prepared['job_uuid'] = job_uuid
-
-        # Track job_uuid -> request_uuid mapping (not passed to handler)
+        # Track job_uuid -> request_uuid mapping
         if request_uuid:
-            self.job_to_request_map[job_uuid] = request_uuid
+            self.job_to_request_map[job.uuid] = request_uuid
 
         # Compute target_cell based on operation
-        operation = job['operation']
-        from fleet_gateway.enums import WarehouseOperation
-        if isinstance(operation, WarehouseOperation):
-            operation_value = operation.value
-        else:
-            operation_value = operation
-
         target_cell = -1
-        if operation_value == WarehouseOperation.PICKUP.value:
+        if job.operation == WarehouseOperation.PICKUP:
             # Find free cell for pickup
-            shelf_height = job['nodes'][-1].get('height', 0.0)
-            target_cell = self.cell_manager.find_free_cell(robot_name, shelf_height)
+            shelf_height = job.nodes[-1].height if job.nodes[-1].height is not None else 0.0
+            target_cell = handler.find_free_cell(shelf_height)
             if target_cell == -1:
                 raise RuntimeError(f"No free cell available for pickup on robot '{robot_name}'")
-        elif operation_value == WarehouseOperation.DELIVERY.value:
+        elif job.operation == WarehouseOperation.DELIVERY:
             # Find cell holding this request
             if not request_uuid:
                 raise RuntimeError("request_uuid is required for DELIVERY operation")
-            target_cell = self.cell_manager.find_cell_with_request(robot_name, request_uuid)
+            target_cell = handler.find_cell_with_request(request_uuid)
             if target_cell == -1:
                 raise RuntimeError(f"Request {request_uuid} not found in any cell of robot '{robot_name}'")
 
-        # Add target_cell to job
-        job_prepared['target_cell'] = target_cell
+        # Create final job with computed target_cell
+        job_with_cell = Job(
+            uuid=job.uuid,
+            operation=job.operation,
+            nodes=job.nodes,
+            target_cell=target_cell
+        )
 
         # If robot is idle, send job immediately
         if handler.state.current_job is None:
-            await handler.send_job(job_prepared)
+            await handler.send_job(job_with_cell)
         else:
             # Robot is busy, queue the job
-            handler.state.jobs.append(job_prepared)
+            handler.state.jobs.append(job_with_cell)
 
         return True
 
@@ -139,22 +136,16 @@ class FleetOrchestrator:
 
     # === Robot Control ===
 
-    async def set_robot_inactive(self, robot_name: str) -> bool:
-        """Set robot to INACTIVE status and cancel current job."""
+    async def set_robot_enabled(self, robot_name: str, enabled: bool) -> bool:
+        """Enable or disable robot (disable cancels current job)."""
         handler = self.get_robot(robot_name)
         if not handler:
             raise ValueError(f"Robot '{robot_name}' not found")
 
-        await handler.set_inactive()
-        return True
-
-    async def set_robot_active(self, robot_name: str) -> bool:
-        """Re-enable robot from INACTIVE or ERROR status."""
-        handler = self.get_robot(robot_name)
-        if not handler:
-            raise ValueError(f"Robot '{robot_name}' not found")
-
-        await handler.set_active()
+        if enabled:
+            await handler.set_active()
+        else:
+            await handler.set_inactive()
         return True
 
     # === Fleet Status ===
@@ -203,18 +194,16 @@ class FleetOrchestrator:
         # Update cell holdings based on operation
         from fleet_gateway.enums import WarehouseOperation
         if operation == WarehouseOperation.PICKUP.value and target_cell >= 0:
-            self.cell_manager.allocate_cell(robot_name, target_cell, request_uuid)
+            handler.allocate_cell(target_cell, request_uuid)
         elif operation == WarehouseOperation.DELIVERY.value and target_cell >= 0:
-            self.cell_manager.release_cell(robot_name, target_cell)
+            handler.release_cell(target_cell)
 
         # Process next queued job if available
         if handler.state.jobs:
             next_job = handler.state.jobs.pop(0)
-            # Extract request_uuid from next_job if it was queued with one
-            request_uuid_for_next = next_job.get('request_uuid')
-            # Remove request_uuid from job before passing to assign_job
-            next_job_clean = {k: v for k, v in next_job.items() if k != 'request_uuid'}
-            await self.assign_job(robot_name, next_job_clean, request_uuid_for_next)
+            # Look up request_uuid from job_to_request_map
+            request_uuid_for_next = self.job_to_request_map.get(next_job.uuid)
+            await self.assign_job(robot_name, next_job, request_uuid_for_next)
         # Future enhancement: Could rebalance fleet here
         # await self._rebalance_fleet()
 
@@ -256,13 +245,20 @@ class FleetOrchestrator:
             created_request_uuids.append(request_uuid)
             request_map[req_input.pickup_id] = request_uuid
 
+            pickup_job_uuid = str(uuid4())
+            delivery_job_uuid = str(uuid4())
+
             pickup_job_data = {
+                'uuid': pickup_job_uuid,
                 'operation': WarehouseOperation.PICKUP.value,
-                'nodes': []
+                'nodes': [],
+                'target_cell': -1
             }
             delivery_job_data = {
+                'uuid': delivery_job_uuid,
                 'operation': WarehouseOperation.DELIVERY.value,
-                'nodes': []
+                'nodes': [],
+                'target_cell': -1
             }
             request_data = {
                 'uuid': request_uuid,
@@ -308,20 +304,26 @@ class FleetOrchestrator:
                 path_node_ids = graph_oracle.getShortestPathById(graph_id, current_node_id, target_node_id)
                 path_nodes = graph_oracle.getNodesByIds(graph_id, path_node_ids)
 
-                # Convert to job format
+                # Convert to Node objects
                 job_nodes = [
-                    {
-                        'id': node.id,
-                        'alias': node.alias if node.alias else '',
-                        'x': node.x,
-                        'y': node.y,
-                        'height': node.height if node.height else 0.0,
-                        'node_type': node.node_type.value if hasattr(node.node_type, 'value') else node.node_type
-                    }
+                    Node(
+                        id=node.id,
+                        alias=node.alias if node.alias else None,
+                        x=node.x,
+                        y=node.y,
+                        height=node.height if node.height else None,
+                        node_type=NodeType(node.node_type.value if hasattr(node.node_type, 'value') else node.node_type)
+                    )
                     for node in path_nodes
                 ]
 
-                job = {'operation': operation, 'nodes': job_nodes}
+                # Create Job object
+                job = Job(
+                    uuid=str(uuid4()),
+                    operation=WarehouseOperation(operation),
+                    nodes=job_nodes,
+                    target_cell=-1  # Will be computed in assign_job
+                )
                 await self.assign_job(robot_name, job, request_uuid)
                 current_node_id = target_node_id
 

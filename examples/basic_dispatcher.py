@@ -102,9 +102,9 @@ async def send_pickup_delivery_request(
         pickup_job_uuid = str(uuid4())
         delivery_job_uuid = str(uuid4())
 
-        # Send pickup job with job_uuid and target_cell
+        # Send pickup job with uuid and target_cell
         pickup_job = {
-            'job_uuid': pickup_job_uuid,
+            'uuid': pickup_job_uuid,
             'operation': WarehouseOperation.PICKUP.value,
             'nodes': pickup_nodes,
             'request_uuid': request_uuid,  # Only for manual tracking in this example
@@ -116,9 +116,9 @@ async def send_pickup_delivery_request(
         # Update local tracking
         cell_holdings[target_cell] = request_uuid
 
-        # Queue delivery job with job_uuid and same target_cell
+        # Queue delivery job with uuid and same target_cell
         delivery_job = {
-            'job_uuid': delivery_job_uuid,
+            'uuid': delivery_job_uuid,
             'operation': WarehouseOperation.DELIVERY.value,
             'nodes': delivery_nodes,
             'request_uuid': request_uuid,  # Only for manual tracking in this example
@@ -146,7 +146,7 @@ async def send_travel_job(robot_handler: RobotHandler, waypoint_nodes: list[dict
     job_uuid = str(uuid4())
 
     travel_job = {
-        'job_uuid': job_uuid,
+        'uuid': job_uuid,
         'operation': WarehouseOperation.TRAVEL.value,
         'nodes': waypoint_nodes,
         'target_cell': -1  # No cell needed for TRAVEL

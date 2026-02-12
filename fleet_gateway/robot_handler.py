@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from dataclasses import asdict
 from typing import TYPE_CHECKING
 
@@ -9,10 +10,13 @@ import redis.asyncio as redis
 from roslibpy import ActionClient, Goal, Ros, Message, Topic
 
 from fleet_gateway.enums import WarehouseOperation, RobotStatus
-from fleet_gateway.models import RobotState
+from fleet_gateway.models import RobotState, Job, job_to_dict, dict_to_job
+from fleet_gateway.robot_cell_manager import RobotCellManager
 
 if TYPE_CHECKING:
     from fleet_gateway.fleet_orchestrator import FleetOrchestrator
+
+logger = logging.getLogger(__name__)
 
 
 class RobotHandler(Ros):
@@ -42,6 +46,10 @@ class RobotHandler(Ros):
             name=name,
             robot_cell_heights=cell_heights
         )
+
+        # Cell manager for this robot's cells
+        self.cell_manager = RobotCellManager()
+        self.cell_manager.register_robot(name, cell_heights)
 
         # Set up the action client
         self.warehouse_cmd_action_client = ActionClient(
@@ -95,42 +103,46 @@ class RobotHandler(Ros):
             # Persist to Redis asynchronously
             asyncio.create_task(self._persist_to_redis())
 
-    def find_free_cell(self, shelf_height: float, occupied_cells: list[bool]) -> int:
-        """Find best free cell matching shelf height."""
-        free_indices = (i for i, occupied in enumerate(occupied_cells) if not occupied)
-        try:
-            return min(free_indices, key=lambda i: abs(self.state.robot_cell_heights[i] - shelf_height))
-        except ValueError:
-            return -1  # No free cell
+    # === Cell Management ===
 
-    async def send_job(self, job: dict) -> bool:
+    def find_free_cell(self, shelf_height: float) -> int:
+        """Find best free cell matching shelf height."""
+        return self.cell_manager.find_free_cell(self.state.name, shelf_height)
+
+    def find_cell_with_request(self, request_uuid: str) -> int:
+        """Find cell index holding the given request."""
+        return self.cell_manager.find_cell_with_request(self.state.name, request_uuid)
+
+    def allocate_cell(self, cell_idx: int, request_uuid: str):
+        """Allocate a cell for a request."""
+        self.cell_manager.allocate_cell(self.state.name, cell_idx, request_uuid)
+
+    def release_cell(self, cell_idx: int):
+        """Release a cell after delivery."""
+        self.cell_manager.release_cell(self.state.name, cell_idx)
+
+    async def send_job(self, job: 'Job') -> bool:
         """Send job to robot via ROS action."""
         if self.state.current_job is not None:
             raise RuntimeError("Current job in progress, cannot send new job")
 
-        # Accept both int and enum for operation
-        operation = job['operation']
-        if isinstance(operation, WarehouseOperation):
-            operation_value = operation.value
-        else:
-            operation_value = operation
+        # Extract operation value
+        operation_value = job.operation.value
 
-        nodes = job['nodes']
-
-        # Get target_cell from job (provided by FleetOrchestrator)
-        target_cell: int = job.get('target_cell', -1)
+        # Get target_cell from job
+        target_cell: int = job.target_cell
 
         # Convert nodes to ROS message format
         ros_nodes = [
             {
-                'id': node['id'],
-                'alias': node.get('alias', ''),
-                'x': node['x'],
-                'y': node['y'],
-                'height': node.get('height', 0.0),
-                'node_type': node['node_type']
+                'id': node.id,
+                'alias': node.alias or '',
+                'x': node.x,
+                'y': node.y,
+                'height': node.height or 0.0,
+                'node_type': node.node_type.value
             }
-            for node in nodes
+            for node in job.nodes
         ]
 
         goal_msg = Message({
@@ -163,10 +175,8 @@ class RobotHandler(Ros):
 
     async def _on_job_result(self, result, operation: int, target_cell: int):
         """Handle job completion result"""
-        print(f"[{self.state.name}] Job completed with result: {result}")
-
-        # Extract job_uuid from completed job
-        job_uuid = self.state.current_job.get('job_uuid', 'unknown') if self.state.current_job else 'unknown'
+        job_uuid = self.state.current_job.uuid if self.state.current_job else 'unknown'
+        logger.info(f"[{self.state.name}] Job {job_uuid} completed with result: {result}")
 
         # Clear current job
         self.state.current_job = None
@@ -190,7 +200,7 @@ class RobotHandler(Ros):
 
     async def _on_job_feedback(self, feedback):
         """Handle job feedback"""
-        print(f"[{self.state.name}] Feedback: last_seen_id={feedback.get('last_seen_id')}, moving={feedback.get('moving_component')}")
+        logger.debug(f"[{self.state.name}] Feedback: last_seen_id={feedback.get('last_seen_id')}, moving={feedback.get('moving_component')}")
 
         # Update last seen node
         if 'last_seen_id' in feedback:
@@ -199,7 +209,7 @@ class RobotHandler(Ros):
 
     async def _on_job_error(self, error):
         """Handle job error"""
-        print(f"[{self.state.name}] Error: {error}")
+        logger.error(f"[{self.state.name}] Job error: {error}")
         self.state.current_job = None
         self.current_goal = None
         self.state.robot_status = RobotStatus.ERROR
@@ -241,14 +251,18 @@ class RobotHandler(Ros):
         # Convert enum to value for Redis storage
         state_dict['robot_status'] = str(self.state.robot_status.value)
 
+        # Convert Job objects to dicts for Redis storage
+        current_job_dict = job_to_dict(self.state.current_job) if self.state.current_job else None
+        jobs_dicts = [job_to_dict(job) for job in self.state.jobs]
+
         robot_data = {
             'name': state_dict['name'],
             'robot_cell_heights': json.dumps(state_dict['robot_cell_heights']),
             'robot_status': state_dict['robot_status'],
             'mobile_base_status': json.dumps(state_dict['mobile_base_status']),
             'piggyback_state': json.dumps(state_dict['piggyback_state']),
-            'current_job': json.dumps(state_dict['current_job']) if state_dict['current_job'] else '',
-            'jobs': json.dumps(state_dict['jobs'])
+            'current_job': json.dumps(current_job_dict) if current_job_dict else '',
+            'jobs': json.dumps(jobs_dicts)
         }
 
         await self.redis_client.hset(f"robot:{self.state.name}", mapping=robot_data)

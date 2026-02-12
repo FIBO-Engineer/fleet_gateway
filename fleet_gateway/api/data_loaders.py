@@ -5,11 +5,14 @@ Provides reusable functions for fetching and deserializing robots and requests f
 """
 
 import json
+import logging
 import redis.asyncio as redis
 from uuid import UUID
 
 from .types import Robot, Request
 from .deserializers import deserialize_robot, deserialize_request
+
+logger = logging.getLogger(__name__)
 
 
 async def load_robot_lookup(r: redis.Redis) -> dict[str, Robot]:
@@ -56,7 +59,7 @@ async def load_robot_with_holdings(r: redis.Redis, name: str) -> Robot | None:
     try:
         robot = deserialize_robot(data)
     except (KeyError, ValueError, json.JSONDecodeError) as e:
-        print(f"Error deserializing robot {name}: {e}")
+        logger.error(f"Error deserializing robot {name}: {e}")
         return None
 
     # Populate holdings
@@ -104,7 +107,7 @@ async def load_request(r: redis.Redis, uuid: UUID) -> Request | None:
     try:
         return deserialize_request(data, robot_lookup)
     except (KeyError, ValueError, json.JSONDecodeError) as e:
-        print(f"Error deserializing request {uuid}: {e}")
+        logger.error(f"Error deserializing request {uuid}: {e}")
         return None
 
 
@@ -133,7 +136,7 @@ async def load_all_robots_with_holdings(r: redis.Redis) -> list[Robot]:
                 if request.handler and request.handler.name in robot_lookup:
                     robot_lookup[request.handler.name].holdings.append(request)
             except (KeyError, ValueError, json.JSONDecodeError) as e:
-                print(f"Error deserializing request {key}: {e}")
+                logger.error(f"Error deserializing request {key}: {e}")
                 continue
 
     return list(robot_lookup.values())
@@ -162,7 +165,7 @@ async def load_all_requests(r: redis.Redis) -> list[Request]:
             try:
                 requests.append(deserialize_request(data, robot_lookup))
             except (KeyError, ValueError, json.JSONDecodeError) as e:
-                print(f"Error deserializing request {key}: {e}")
+                logger.error(f"Error deserializing request {key}: {e}")
                 continue
 
     return requests
