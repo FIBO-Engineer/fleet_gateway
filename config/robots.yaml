@@ -1,0 +1,13 @@
+# Robot Fleet Configuration
+# Each robot has a name, ROS bridge connection details, and cell configuration
+
+robots:
+  Lertvilai:
+    host: "192.168.123.171"
+    port: 8002
+    cell_heights: [0.5, 1.0, 1.5]  # Heights in meters
+
+  # Chompu:
+  #   host: "192.168.123.171"
+  #   port: 8003
+  #   cell_heights: [0.5, 1.0, 1.5]

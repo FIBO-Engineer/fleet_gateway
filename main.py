@@ -3,13 +3,12 @@ import os
 from contextlib import asynccontextmanager, suppress
 
 import redis.asyncio as redis
-import strawberry
 from fastapi import FastAPI
 from strawberry.fastapi import GraphQLRouter
 
 from fleet_gateway.robot_handler import RobotHandler
 from fleet_gateway.graph_oracle import GraphOracle
-from schema import Query, Subscription, Mutation
+from fleet_gateway.api import schema
 
 async def handler_connect_loop(robot_handlers: list[RobotHandler], stop_event: asyncio.Event):
     while not stop_event.is_set():
@@ -76,8 +75,9 @@ async def get_context(request):
         "robot_lookup": request.app.state.robot_lookup,
     }
 
-schema = strawberry.Schema(query=Query, mutation=Mutation, subscription=Subscription, context_getter=get_context)
-graphql_app = GraphQLRouter(schema)
+# Create GraphQL router with context getter
+# Note: The schema is already created in fleet_gateway.api.schema
+graphql_app = GraphQLRouter(schema, context_getter=get_context)
 
 app = FastAPI(lifespan=lifespan)
 app.include_router(graphql_app, prefix="/graphql")

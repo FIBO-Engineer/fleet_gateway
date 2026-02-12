@@ -11,7 +11,7 @@ import asyncio
 import json
 from uuid import UUID, uuid4
 import redis.asyncio as redis
-from robot_handler import RobotHandler
+from fleet_gateway.robot_handler import RobotHandler
 from fleet_gateway.enums import WarehouseOperation, RequestStatus
 
 
