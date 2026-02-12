@@ -96,16 +96,7 @@ class RobotHandler(Ros):
             asyncio.create_task(self._persist_to_redis())
 
     def find_free_cell(self, shelf_height: float, occupied_cells: list[bool]) -> int:
-        """
-        Find the best free cell for a given shelf height.
-
-        Args:
-            shelf_height: Height of the shelf to pick up
-            occupied_cells: List of booleans indicating which cells are occupied
-
-        Returns:
-            Index of best free cell, or -1 if no free cell available
-        """
+        """Find best free cell matching shelf height."""
         free_indices = (i for i, occupied in enumerate(occupied_cells) if not occupied)
         try:
             return min(free_indices, key=lambda i: abs(self.state.robot_cell_heights[i] - shelf_height))
@@ -113,15 +104,7 @@ class RobotHandler(Ros):
             return -1  # No free cell
 
     async def send_job(self, job: dict) -> bool:
-        """
-        Send a job to the robot via ROS action.
-
-        Args:
-            job: Job dictionary with 'operation', 'nodes', and 'target_cell' fields
-
-        Returns:
-            True if job was sent successfully, False otherwise
-        """
+        """Send job to robot via ROS action."""
         if self.state.current_job is not None:
             raise RuntimeError("Current job in progress, cannot send new job")
 

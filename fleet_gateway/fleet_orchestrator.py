@@ -6,44 +6,28 @@ providing a clean interface for fleet-level operations and encapsulating
 robot handler internals.
 """
 
+import json
 import redis.asyncio as redis
 from uuid import uuid4
 
 from fleet_gateway.robot_handler import RobotHandler
+from fleet_gateway.robot_cell_manager import RobotCellManager
 from fleet_gateway.models import RobotState
-from fleet_gateway.enums import RobotStatus
+from fleet_gateway.enums import RobotStatus, WarehouseOperation, RequestStatus
 
 
 class FleetOrchestrator:
-    """
-    Manages robot fleet and provides clean API for fleet operations.
-
-    Responsibilities:
-    - Robot lifecycle management
-    - Job assignment and dispatching
-    - Fleet status monitoring
-    - Centralized coordination logic
-    """
+    """Central coordinator for robot fleet management and job dispatching."""
 
     def __init__(self, robot_handlers: list[RobotHandler], redis_client: redis.Redis):
-        """
-        Initialize fleet orchestrator.
-
-        Args:
-            robot_handlers: List of robot handlers to manage
-            redis_client: Redis client for state management
-        """
+        """Initialize fleet orchestrator with robot handlers and Redis client."""
         self.robots: dict[str, RobotHandler] = {
             handler.state.name: handler for handler in robot_handlers
         }
         self.redis = redis_client
 
-        # Track which cell holds which request for each robot
-        # robot_name -> list of request_uuids (None if cell is free)
-        self.robot_cell_holdings: dict[str, list[str | None]] = {
-            handler.state.name: [None] * len(handler.state.robot_cell_heights)
-            for handler in robot_handlers
-        }
+        # Cell allocation manager
+        self.cell_manager = RobotCellManager(robot_handlers)
 
         # Track job_uuid to request_uuid mapping
         self.job_to_request_map: dict[str, str | None] = {}
@@ -55,33 +39,15 @@ class FleetOrchestrator:
     # === Robot Access ===
 
     def get_robot(self, robot_name: str) -> RobotHandler | None:
-        """
-        Get robot handler by name.
-
-        Args:
-            robot_name: Name of the robot
-
-        Returns:
-            RobotHandler if found, None otherwise
-        """
+        """Get robot handler by name."""
         return self.robots.get(robot_name)
 
     def get_all_robot_names(self) -> list[str]:
-        """
-        Get names of all robots in the fleet.
-
-        Returns:
-            List of robot names
-        """
+        """Get all robot names in the fleet."""
         return list(self.robots.keys())
 
     def get_available_robots(self) -> list[str]:
-        """
-        Get list of robots available for work (IDLE status, no current job).
-
-        Returns:
-            List of available robot names
-        """
+        """Get robots available for work (IDLE, no current job)."""
         return [
             name for name, handler in self.robots.items()
             if handler.state.robot_status == RobotStatus.IDLE
@@ -89,15 +55,7 @@ class FleetOrchestrator:
         ]
 
     def get_robot_state(self, robot_name: str) -> RobotState | None:
-        """
-        Get robot state.
-
-        Args:
-            robot_name: Name of the robot
-
-        Returns:
-            RobotState if found, None otherwise
-        """
+        """Get robot state by name."""
         handler = self.get_robot(robot_name)
         return handler.state if handler else None
 
@@ -109,23 +67,7 @@ class FleetOrchestrator:
         job: dict,
         request_uuid: str | None = None
     ) -> bool:
-        """
-        Assign a job to a specific robot.
-
-        Automatically handles queuing if robot is busy.
-
-        Args:
-            robot_name: Name of the robot to assign job to
-            job: Job dictionary with 'operation' and 'nodes' fields
-            request_uuid: Optional UUID of the request this job belongs to
-
-        Returns:
-            True if job was assigned/queued successfully
-
-        Raises:
-            ValueError: If robot not found
-            RuntimeError: If no free cell available or request not found
-        """
+        """Assign job to robot (queues if busy, generates job_uuid, allocates cells)."""
         handler = self.get_robot(robot_name)
         if not handler:
             raise ValueError(f"Robot '{robot_name}' not found")
@@ -152,18 +94,16 @@ class FleetOrchestrator:
         target_cell = -1
         if operation_value == WarehouseOperation.PICKUP.value:
             # Find free cell for pickup
-            occupied = [cell is not None for cell in self.robot_cell_holdings[robot_name]]
             shelf_height = job['nodes'][-1].get('height', 0.0)
-            target_cell = handler.find_free_cell(shelf_height, occupied)
+            target_cell = self.cell_manager.find_free_cell(robot_name, shelf_height)
             if target_cell == -1:
                 raise RuntimeError(f"No free cell available for pickup on robot '{robot_name}'")
         elif operation_value == WarehouseOperation.DELIVERY.value:
             # Find cell holding this request
             if not request_uuid:
                 raise RuntimeError("request_uuid is required for DELIVERY operation")
-            try:
-                target_cell = self.robot_cell_holdings[robot_name].index(request_uuid)
-            except ValueError:
+            target_cell = self.cell_manager.find_cell_with_request(robot_name, request_uuid)
+            if target_cell == -1:
                 raise RuntimeError(f"Request {request_uuid} not found in any cell of robot '{robot_name}'")
 
         # Add target_cell to job
@@ -179,19 +119,7 @@ class FleetOrchestrator:
         return True
 
     async def cancel_job(self, robot_name: str) -> bool:
-        """
-        Cancel the currently executing job for a robot.
-
-        Args:
-            robot_name: Name of the robot
-
-        Returns:
-            True if job was cancelled
-
-        Raises:
-            ValueError: If robot not found
-            RuntimeError: If no job to cancel
-        """
+        """Cancel currently executing job."""
         handler = self.get_robot(robot_name)
         if not handler:
             raise ValueError(f"Robot '{robot_name}' not found")
@@ -200,18 +128,7 @@ class FleetOrchestrator:
         return True
 
     async def clear_job_queue(self, robot_name: str) -> int:
-        """
-        Clear all queued jobs for a robot.
-
-        Args:
-            robot_name: Name of the robot
-
-        Returns:
-            Number of jobs cleared
-
-        Raises:
-            ValueError: If robot not found
-        """
+        """Clear all queued jobs and return count."""
         handler = self.get_robot(robot_name)
         if not handler:
             raise ValueError(f"Robot '{robot_name}' not found")
@@ -223,20 +140,7 @@ class FleetOrchestrator:
     # === Robot Control ===
 
     async def set_robot_inactive(self, robot_name: str) -> bool:
-        """
-        Set robot to INACTIVE status (user disabled).
-
-        Cancels current job if any.
-
-        Args:
-            robot_name: Name of the robot
-
-        Returns:
-            True if successful
-
-        Raises:
-            ValueError: If robot not found
-        """
+        """Set robot to INACTIVE status and cancel current job."""
         handler = self.get_robot(robot_name)
         if not handler:
             raise ValueError(f"Robot '{robot_name}' not found")
@@ -245,18 +149,7 @@ class FleetOrchestrator:
         return True
 
     async def set_robot_active(self, robot_name: str) -> bool:
-        """
-        Re-enable robot from INACTIVE or ERROR status.
-
-        Args:
-            robot_name: Name of the robot
-
-        Returns:
-            True if successful
-
-        Raises:
-            ValueError: If robot not found
-        """
+        """Re-enable robot from INACTIVE or ERROR status."""
         handler = self.get_robot(robot_name)
         if not handler:
             raise ValueError(f"Robot '{robot_name}' not found")
@@ -267,12 +160,7 @@ class FleetOrchestrator:
     # === Fleet Status ===
 
     def get_fleet_status(self) -> dict[str, dict]:
-        """
-        Get status of all robots in the fleet.
-
-        Returns:
-            Dictionary mapping robot names to status info
-        """
+        """Get status of all robots in the fleet."""
         return {
             name: {
                 'status': handler.state.robot_status.name,
@@ -288,24 +176,14 @@ class FleetOrchestrator:
         }
 
     def get_busy_robots(self) -> list[str]:
-        """
-        Get list of robots currently executing jobs.
-
-        Returns:
-            List of busy robot names
-        """
+        """Get robots currently executing jobs."""
         return [
             name for name, handler in self.robots.items()
             if handler.state.robot_status == RobotStatus.BUSY
         ]
 
     def get_idle_robots(self) -> list[str]:
-        """
-        Get list of idle robots (not busy, not inactive, not errored).
-
-        Returns:
-            List of idle robot names
-        """
+        """Get idle robots."""
         return [
             name for name, handler in self.robots.items()
             if handler.state.robot_status == RobotStatus.IDLE
@@ -314,17 +192,7 @@ class FleetOrchestrator:
     # === Job Queue Management ===
 
     async def on_robot_job_completed(self, robot_name: str, job_uuid: str, operation: int, target_cell: int) -> None:
-        """
-        Called when a robot completes a job.
-
-        Handles cell holdings update and automatic queue processing.
-
-        Args:
-            robot_name: Name of the robot that completed the job
-            job_uuid: The unique job identifier
-            operation: The warehouse operation that was completed
-            target_cell: The cell that was used
-        """
+        """Handle job completion: update cells, process next queued job."""
         handler = self.get_robot(robot_name)
         if not handler:
             return
@@ -335,9 +203,9 @@ class FleetOrchestrator:
         # Update cell holdings based on operation
         from fleet_gateway.enums import WarehouseOperation
         if operation == WarehouseOperation.PICKUP.value and target_cell >= 0:
-            self.robot_cell_holdings[robot_name][target_cell] = request_uuid
+            self.cell_manager.allocate_cell(robot_name, target_cell, request_uuid)
         elif operation == WarehouseOperation.DELIVERY.value and target_cell >= 0:
-            self.robot_cell_holdings[robot_name][target_cell] = None
+            self.cell_manager.release_cell(robot_name, target_cell)
 
         # Process next queued job if available
         if handler.state.jobs:
@@ -353,15 +221,7 @@ class FleetOrchestrator:
     # === Advanced Operations ===
 
     def find_optimal_robot(self, target_position: tuple[float, float]) -> str | None:
-        """
-        Find the best robot for a job based on proximity to target.
-
-        Args:
-            target_position: (x, y) coordinates of target location
-
-        Returns:
-            Name of optimal robot, or None if no available robots
-        """
+        """Find closest available robot to target position."""
         available = self.get_available_robots()
         if not available:
             return None
@@ -376,3 +236,104 @@ class FleetOrchestrator:
             return ((robot_x - target_x) ** 2 + (robot_y - target_y) ** 2) ** 0.5
 
         return min(available, key=distance)
+
+    # === Request Management ===
+
+    async def submit_requests_and_assignments(
+        self,
+        requests: list,
+        assignments: list,
+        graph_oracle,
+        graph_id: int
+    ) -> list[str]:
+        """Submit warehouse requests and robot assignments with path planning."""
+        created_request_uuids = []
+
+        # Create requests in Redis
+        request_map = {}
+        for req_input in requests:
+            request_uuid = str(uuid4())
+            created_request_uuids.append(request_uuid)
+            request_map[req_input.pickup_id] = request_uuid
+
+            pickup_job_data = {
+                'operation': WarehouseOperation.PICKUP.value,
+                'nodes': []
+            }
+            delivery_job_data = {
+                'operation': WarehouseOperation.DELIVERY.value,
+                'nodes': []
+            }
+            request_data = {
+                'uuid': request_uuid,
+                'pickup': json.dumps(pickup_job_data),
+                'delivery': json.dumps(delivery_job_data),
+                'handler': '',
+                'request_status': str(RequestStatus.IN_PROGRESS.value)
+            }
+            await self.redis.hset(f"request:{request_uuid}", mapping=request_data)
+            await self.redis.publish(f"request:{request_uuid}:update", "updated")
+
+        # Process assignments
+        for assignment in assignments:
+            robot_name = assignment.robot
+            target_node_ids = assignment.jobs
+
+            if self.get_robot(robot_name) is None:
+                raise ValueError(f"Robot '{robot_name}' not found")
+
+            current_node_id = await self._get_robot_current_node(robot_name)
+            if current_node_id is None:
+                raise RuntimeError(f"Robot '{robot_name}' position not found")
+
+            for target_node_id in target_node_ids:
+                operation = WarehouseOperation.TRAVEL.value
+                request_uuid = None
+
+                # Check if pickup
+                if target_node_id in request_map:
+                    operation = WarehouseOperation.PICKUP.value
+                    request_uuid = request_map[target_node_id]
+                    await self.redis.hset(f"request:{request_uuid}", 'handler', robot_name)
+                    await self.redis.publish(f"request:{request_uuid}:update", "updated")
+                # Check if delivery
+                else:
+                    for req_input in requests:
+                        if req_input.delivery_id == target_node_id:
+                            operation = WarehouseOperation.DELIVERY.value
+                            request_uuid = request_map.get(req_input.pickup_id)
+                            break
+
+                # Query graph oracle for path
+                path_node_ids = graph_oracle.getShortestPathById(graph_id, current_node_id, target_node_id)
+                path_nodes = graph_oracle.getNodesByIds(graph_id, path_node_ids)
+
+                # Convert to job format
+                job_nodes = [
+                    {
+                        'id': node.id,
+                        'alias': node.alias if node.alias else '',
+                        'x': node.x,
+                        'y': node.y,
+                        'height': node.height if node.height else 0.0,
+                        'node_type': node.node_type.value if hasattr(node.node_type, 'value') else node.node_type
+                    }
+                    for node in path_nodes
+                ]
+
+                job = {'operation': operation, 'nodes': job_nodes}
+                await self.assign_job(robot_name, job, request_uuid)
+                current_node_id = target_node_id
+
+        return created_request_uuids
+
+    async def _get_robot_current_node(self, robot_name: str) -> int | None:
+        """Get robot's current node ID from Redis."""
+        robot_data = await self.redis.hgetall(f"robot:{robot_name}")
+        if not robot_data or 'mobile_base_status' not in robot_data:
+            return None
+        try:
+            mobile_base_status = json.loads(robot_data['mobile_base_status'])
+            return mobile_base_status['last_seen']['id']
+        except (KeyError, ValueError, json.JSONDecodeError):
+            return None
