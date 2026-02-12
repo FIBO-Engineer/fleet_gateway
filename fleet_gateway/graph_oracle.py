@@ -1,8 +1,9 @@
 import os
 from supabase import create_client, Client
-from typing import overload
 
-from backup.node import Node, NodeType
+from fleet_gateway.models import Node
+from fleet_gateway.enums import NodeType
+
 
 class GraphOracle:
     def __init__(self, supabase_url, supabase_key):
@@ -11,12 +12,19 @@ class GraphOracle:
         self.supabase: Client = create_client(self.url, self.key)
 
     def getNodesByIds(self, graph_id: int, node_ids: list[int]) -> list[Node]:
-        detailed_data = self.supabase.rpc("wh_get_nodes_by_ids", 
+        detailed_data = self.supabase.rpc("wh_get_nodes_by_ids",
                               {"p_graph_id": graph_id, "p_node_ids": node_ids}
                               ).execute()
         nodes: list[Node] = []
         for row in detailed_data.data:
-            n = Node(row["id"], row["alias"], row["x"], row["y"], row["height"], row["type"])
+            n = Node(
+                id=row["id"],
+                alias=row.get("alias"),
+                x=row["x"],
+                y=row["y"],
+                height=row.get("height"),
+                node_type=NodeType(row["type"])
+            )
             nodes.append(n)
         return nodes
 

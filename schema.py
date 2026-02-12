@@ -2,17 +2,25 @@ import strawberry
 from uuid import UUID, uuid4
 import redis.asyncio as redis
 import json
-from typing import AsyncGenerator
+from typing import AsyncGenerator, TYPE_CHECKING
 
 # Import shared enums and wrap with Strawberry
 from fleet_gateway import enums
 from fleet_gateway.graph_oracle import GraphOracle
 from fleet_gateway.robot_handler import RobotHandler
 
-NodeType = strawberry.enum(enums.NodeType)
-RobotStatus = strawberry.enum(enums.RobotStatus)
-WarehouseOperation = strawberry.enum(enums.WarehouseOperation)
-RequestStatus = strawberry.enum(enums.RequestStatus)
+# For type checking, use the plain enums
+# At runtime, use the Strawberry-wrapped versions
+if TYPE_CHECKING:
+    from fleet_gateway.enums import NodeType, RobotStatus, WarehouseOperation, RequestStatus
+else:
+    NodeType = strawberry.enum(enums.NodeType)
+    RobotStatus = strawberry.enum(enums.RobotStatus)
+    WarehouseOperation = strawberry.enum(enums.WarehouseOperation)
+    RequestStatus = strawberry.enum(enums.RequestStatus)
+
+# Note: These @strawberry.type classes mirror the dataclasses in models.py
+# The dataclasses are used internally, while these are exposed via GraphQL
 
 @strawberry.type
 class Node:
