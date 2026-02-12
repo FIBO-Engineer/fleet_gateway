@@ -14,10 +14,5 @@ supabase>=2.0.0
 # ROS Bridge
 roslibpy>=1.5.0
 
-# Configuration (Phase 1)
-pydantic>=2.0.0
-pydantic-settings>=2.0.0
-pyyaml>=6.0
-
-# Development
+# Configuration
 python-dotenv>=1.0.0

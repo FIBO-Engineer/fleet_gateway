@@ -1,14 +1,27 @@
 import asyncio
+import json
 import os
 from contextlib import asynccontextmanager, suppress
 
 import redis.asyncio as redis
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from strawberry.fastapi import GraphQLRouter
 
 from fleet_gateway.robot_handler import RobotHandler
 from fleet_gateway.graph_oracle import GraphOracle
 from fleet_gateway.api import schema
+
+# Load environment variables
+load_dotenv()
+
+# Configuration loaded from .env
+REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
+REDIS_PORT = int(os.getenv('REDIS_PORT', '6379'))
+SUPABASE_URL = os.getenv('SUPABASE_URL', '')
+SUPABASE_KEY = os.getenv('SUPABASE_KEY', '')
+GRAPH_ID = int(os.getenv('GRAPH_ID', '1'))
+ROBOTS_CONFIG = json.loads(os.getenv('ROBOTS_CONFIG', '{}'))
 
 async def handler_connect_loop(robot_handlers: list[RobotHandler], stop_event: asyncio.Event):
     while not stop_event.is_set():
@@ -23,31 +36,27 @@ async def handler_connect_loop(robot_handlers: list[RobotHandler], stop_event: a
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Initialize Redis connection
-    app.state.redis = redis.Redis(host='localhost', port=6379, decode_responses=True)
+    app.state.redis = redis.Redis(
+        host=REDIS_HOST,
+        port=REDIS_PORT,
+        decode_responses=True
+    )
     await app.state.redis.ping()
 
     # Initialize GraphOracle
-    supabase_url = os.environ.get("SUPABASE_URL", "")
-    supabase_key = os.environ.get("SUPABASE_KEY", "")
-    app.state.graph_oracle = GraphOracle(supabase_url, supabase_key)
-    app.state.graph_id = int(os.environ.get("GRAPH_ID", "1"))  # Default graph ID
+    app.state.graph_oracle = GraphOracle(SUPABASE_URL, SUPABASE_KEY)
+    app.state.graph_id = GRAPH_ID
 
-    # Initialize robot handlers with Redis client
+    # Initialize robot handlers from config
     app.state.robot_handlers = [
         RobotHandler(
-            name='Lertvilai',
-            host_ip='192.168.123.171',
-            port=8002,
-            cell_heights=[0.5, 1.0, 1.5],  # Example heights in meters
+            name=robot_name,
+            host_ip=config['host'],
+            port=config['port'],
+            cell_heights=config['cell_heights'],
             redis_client=app.state.redis
-        ),
-        # RobotHandler(
-        #     name='Chompu',
-        #     host_ip='192.168.123.171',
-        #     port=8003,
-        #     cell_heights=[0.5, 1.0, 1.5],
-        #     redis_client=app.state.redis
-        # )
+        )
+        for robot_name, config in ROBOTS_CONFIG.items()
     ]
 
     # Create robot lookup dict

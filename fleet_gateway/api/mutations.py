@@ -14,6 +14,7 @@ from fleet_gateway.graph_oracle import GraphOracle
 from fleet_gateway.robot_handler import RobotHandler
 
 from .types import RequestInput, AssignmentInput, SubmitResult
+from .data_loaders import get_robot_current_node
 
 
 @strawberry.type
@@ -96,16 +97,13 @@ class Mutation:
                     )
 
                 # Get robot's current position
-                robot_data = await r.hgetall(f"robot:{robot_name}")
-                if not robot_data:
+                current_node_id = await get_robot_current_node(r, robot_name)
+                if current_node_id is None:
                     return SubmitResult(
                         success=False,
-                        message=f"Robot '{robot_name}' state not found in Redis",
+                        message=f"Robot '{robot_name}' position not found",
                         request_uuids=created_request_uuids
                     )
-
-                mobile_base_status = json.loads(robot_data['mobile_base_status'])
-                current_node_id = mobile_base_status['last_seen']['id']
 
                 # Process each target node
                 for target_node_id in target_node_ids:
