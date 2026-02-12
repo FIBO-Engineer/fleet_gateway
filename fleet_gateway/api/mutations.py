@@ -42,10 +42,7 @@ class Mutation:
 
         try:
             # Delegate all business logic to orchestrator
-            request_uuids = await fleet.submit_requests_and_assignments(
-                requests=requests,
-                assignments=assignments,
-            )
+            request_uuids = await fleet.submit_requests_and_assignments(requests, assignments)
 
             return SubmitResult(
                 success=True,

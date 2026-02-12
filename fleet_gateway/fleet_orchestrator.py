@@ -6,26 +6,29 @@ providing a clean interface for fleet-level operations and encapsulating
 robot handler internals.
 """
 
-import json
 import redis.asyncio as redis
-from uuid import uuid4
+from uuid import uuid4, UUID
 
 from fleet_gateway.robot_handler import RobotHandler
-from fleet_gateway.job_handler import JobHandler
-from fleet_gateway.api.types import Job, Node, Robot
-from fleet_gateway.enums import RobotStatus, WarehouseOperation, RequestStatus, NodeType
+from fleet_gateway.graph_oracle import GraphOracle
+from fleet_gateway.job_store import JobStore
+from fleet_gateway.request_store import RequestStore
+from fleet_gateway.api.types import Job, Robot, Request, RequestInput, AssignmentInput
+from fleet_gateway.enums import RobotStatus, WarehouseOperation, RequestStatus
 
 
 class FleetOrchestrator:
     """Central coordinator for robot fleet management and job dispatching."""
 
-    def __init__(self, robot_handlers: list[RobotHandler], redis_client: redis.Redis):
+    def __init__(self, robot_handlers: list[RobotHandler], redis_client: redis.Redis, graph_oracle: GraphOracle):
         """Initialize fleet orchestrator with robot handlers and Redis client."""
         self.robots: dict[str, RobotHandler] = {
             robot.state.name: robot for robot in robot_handlers
         }
         self.redis = redis_client
-        self.job_handler = JobHandler(redis_client)
+        self.requests = RequestStore(redis_client)
+        self.jobs = JobStore(redis_client)
+        self.graph_oracle = graph_oracle
 
         # Set orchestrator reference on each robot handler
         for robot in robot_handlers:
@@ -68,7 +71,7 @@ class FleetOrchestrator:
         )
 
         # Persist job to Redis
-        await self.job_handler.upsert_job(job_with_cell)
+        await self.jobs.upsert_job(job_with_cell)
 
         # If robot is idle, send job immediately
         if robot.state.current_job is None and robot.state.robot_status == RobotStatus.IDLE:
@@ -109,113 +112,24 @@ class FleetOrchestrator:
 
     async def submit_requests_and_assignments(
         self, 
-        requests: list,
-        assignments: list,
-    ) -> list[str]:
+        request_inputs: list[RequestInput],
+        assignments: list[AssignmentInput],
+    ) -> list[UUID]:
         """Submit warehouse requests and robot assignments with path planning."""
-        created_request_uuids = []
 
-        # Create requests in Redis
-        request_map = {}
-        for req_input in requests:
-            request_uuid = str(uuid4())
-            created_request_uuids.append(request_uuid)
-            request_map[req_input.pickup_id] = request_uuid
+        requests: list[Request] = []
 
-            pickup_job_uuid = str(uuid4())
-            delivery_job_uuid = str(uuid4())
+        for req in request_inputs:
+            for robot_name, route_node_ids in assignments:
+                if req.pickup_id in route_node_ids and req.delivery_id in route_node_ids:
+                    # Late routing for inactive scenario
+                    request_uuid = uuid4()
+                    pickup_job = Job(uuid4(), WarehouseOperation.PICKUP, self.graph_oracle.getNodesByIds(req.pickup_id), -1, request_uuid)
+                    delivery_job = Job(uuid4(), WarehouseOperation.DELIVERY, self.graph_oracle.getNodesByIds(req.pickup_id), -1, request_uuid)
+                    requests.append(Request(request_uuid, pickup_job, delivery_job, self.get_robot(robot_name), RequestStatus.IN_PROGRESS))
 
-            pickup_job_data = {
-                'uuid': pickup_job_uuid,
-                'operation': WarehouseOperation.PICKUP.value,
-                'nodes': [],
-                'target_cell': -1
-            }
-            delivery_job_data = {
-                'uuid': delivery_job_uuid,
-                'operation': WarehouseOperation.DELIVERY.value,
-                'nodes': [],
-                'target_cell': -1
-            }
-            request_data = {
-                'uuid': request_uuid,
-                'pickup': json.dumps(pickup_job_data),
-                'delivery': json.dumps(delivery_job_data),
-                'handler': '',
-                'request_status': str(RequestStatus.IN_PROGRESS.value)
-            }
-            await self.redis.hset(f"request:{request_uuid}", mapping=request_data)
-            await self.redis.publish(f"request:{request_uuid}:update", "updated")
-
-        # Process assignments
-        for assignment in assignments:
-            robot_name = assignment.robot
-            target_node_ids = assignment.jobs
-
-            if self.get_robot(robot_name) is None:
-                raise ValueError(f"Robot '{robot_name}' not found")
-
-            current_node_id = await self._get_robot_current_node(robot_name)
-            if current_node_id is None:
-                raise RuntimeError(f"Robot '{robot_name}' position not found")
-
-            for target_node_id in target_node_ids:
-                operation = WarehouseOperation.TRAVEL.value
-                request_uuid = None
-
-                # Check if pickup
-                if target_node_id in request_map:
-                    operation = WarehouseOperation.PICKUP.value
-                    request_uuid = request_map[target_node_id]
-                    await self.redis.hset(f"request:{request_uuid}", 'handler', robot_name)
-                    await self.redis.publish(f"request:{request_uuid}:update", "updated")
-                # Check if delivery
-                else:
-                    for req_input in requests:
-                        if req_input.delivery_id == target_node_id:
-                            operation = WarehouseOperation.DELIVERY.value
-                            request_uuid = request_map.get(req_input.pickup_id)
-                            break
-
-                # Query graph oracle for path
-                path_node_ids = graph_oracle.getShortestPathById(graph_id, current_node_id, target_node_id)
-                path_nodes = graph_oracle.getNodesByIds(graph_id, path_node_ids)
-
-                # Convert to Node objects
-                job_nodes = [
-                    Node(
-                        id=node.id,
-                        alias=node.alias if node.alias else None,
-                        x=node.x,
-                        y=node.y,
-                        height=node.height if node.height else None,
-                        node_type=NodeType(node.node_type.value if hasattr(node.node_type, 'value') else node.node_type)
-                    )
-                    for node in path_nodes
-                ]
-
-                # Create Job object
-                job = Job(
-                    uuid=str(uuid4()),
-                    operation=WarehouseOperation(operation),
-                    nodes=job_nodes,
-                    target_cell=-1  # Will be computed in assign_job
-                )
-                await self.assign_job(robot_name, job, request_uuid)
-                current_node_id = target_node_id
-
-        return created_request_uuids
-
-    async def _get_robot_current_node(self, robot_name: str) -> int | None:
-        """Get robot's current node ID from Redis."""
-        robot_data = await self.redis.hgetall(f"robot:{robot_name}")
-        if not robot_data or 'mobile_base_status' not in robot_data:
-            return None
-        try:
-            mobile_base_status = json.loads(robot_data['mobile_base_status'])
-            return mobile_base_status['last_seen']['id']
-        except (KeyError, ValueError, json.JSONDecodeError):
-            return None
+        uuids = await self.requests.upsert_all(requests, self.jobs)
+        return uuids
 
     # === Fleet Status ===
 

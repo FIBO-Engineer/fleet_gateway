@@ -6,12 +6,18 @@ from fleet_gateway.enums import NodeType
 
 
 class GraphOracle:
-    def __init__(self, supabase_url, supabase_key):
+    def __init__(self, supabase_url: str, supabase_key: str, graph_id: int | None):
         self.url: str = supabase_url # os.environ.get("SUPABASE_URL")
         self.key: str = supabase_key # os.environ.get("SUPABASE_KEY")
+        self.graph_id: int | None = graph_id
         self.supabase: Client = create_client(self.url, self.key)
 
-    def getNodesByIds(self, graph_id: int, node_ids: list[int]) -> list[Node]:
+    def getNodesByIds(self, graph_id: int | None, node_ids: list[int]) -> list[Node]:
+        if graph_id is None:
+            if self.graph_id is None:
+                raise RuntimeError("Unknown graph_id, define in function or ctor")
+            else:
+                graph_id = self.graph_id
         detailed_data = self.supabase.rpc("wh_get_nodes_by_ids",
                               {"p_graph_id": graph_id, "p_node_ids": node_ids}
                               ).execute()
@@ -29,7 +35,12 @@ class GraphOracle:
         return nodes
 
     # Query by Alias
-    def getShortestPathByAlias(self, graph_id: int, start_alias: str, end_alias: str) -> list[Node]:
+    def getShortestPathByAlias(self, graph_id: int | None, start_alias: str, end_alias: str) -> list[Node]:
+        if graph_id is None:
+            if self.graph_id is None:
+                raise RuntimeError("Unknown graph_id, define in function or ctor")
+            else:
+                graph_id = self.graph_id
         return (
             self.supabase.rpc("wh_astar_shortest_path",
                             {"p_graph_id": graph_id,  "p_start_alias": start_alias, "p_end_alias": end_alias})
@@ -37,7 +48,12 @@ class GraphOracle:
         )
     
     # Query by ID
-    def getShortestPathById(self, graph_id: int, start_id: int, end_id: int) -> list[int]:
+    def getShortestPathById(self, graph_id: int | None, start_id: int, end_id: int) -> list[int]:
+        if graph_id is None:
+            if self.graph_id is None:
+                raise RuntimeError("Unknown graph_id, define in function or ctor")
+            else:
+                graph_id = self.graph_id
         return (
             self.supabase.rpc("wh_astar_shortest_path", 
                             { "p_graph_id": graph_id, "p_start_vid": start_id, "p_end_vid": end_id})

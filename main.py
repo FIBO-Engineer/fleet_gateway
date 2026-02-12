@@ -45,8 +45,7 @@ async def lifespan(app: FastAPI):
     await app.state.redis.ping()
 
     # Initialize GraphOracle
-    app.state.graph_oracle = GraphOracle(SUPABASE_URL, SUPABASE_KEY)
-    app.state.graph_id = GRAPH_ID
+    app.state.graph_oracle = GraphOracle(SUPABASE_URL, SUPABASE_KEY, GRAPH_ID)
 
     # Initialize robot handlers from config
     robot_handlers = [
@@ -65,7 +64,7 @@ async def lifespan(app: FastAPI):
         await robot_handler.initialize_in_redis()
 
     # Create fleet orchestrator (central coordinator)
-    app.state.fleet = FleetOrchestrator(robot_handlers, app.state.redis)
+    app.state.fleet = FleetOrchestrator(robot_handlers, app.state.redis, app.state.graph_oracle)
 
     stop_event = asyncio.Event()
     auto_connector = asyncio.create_task(handler_connect_loop(app.state.fleet, stop_event))
@@ -81,7 +80,6 @@ async def get_context(request):
         "request": request,
         "redis": request.app.state.redis,
         "graph_oracle": request.app.state.graph_oracle,
-        "graph_id": request.app.state.graph_id,
         "fleet": request.app.state.fleet,
     }
 

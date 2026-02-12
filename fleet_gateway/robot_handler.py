@@ -113,6 +113,11 @@ class RobotHandler(Ros):
 
             # Persist to Redis asynchronously
             asyncio.create_task(self._persist_to_redis())
+    
+    # === Location ===
+    def get_current_node(self):
+        """Get robot's current node ID from Redis."""
+        return self.state.mobile_base_status.last_seen
 
     # === Cell Management ===
 
@@ -147,6 +152,7 @@ class RobotHandler(Ros):
     def get_occupied_cells(self) -> list[bool]:
         """Get list of which cells are occupied."""
         return [cell is not None for cell in self.state.cell_holdings]
+    
 
     def find_target_cell(self, job: Job) -> int:
         """Find appropriate target cell for job based on operation type"""

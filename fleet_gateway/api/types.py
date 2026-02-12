@@ -36,7 +36,7 @@ class Node:
 @strawberry.type
 class MobileBaseState:
     """Mobile base position and orientation"""
-    last_seen: Node
+    last_seen: Node | None 
     x: float
     y: float
     a: float
@@ -54,11 +54,11 @@ class PiggybackState:
 @strawberry.type
 class Job:
     """Robot job with operation type and path nodes"""
-    uuid: str
+    uuid: UUID
     operation: WarehouseOperation
     nodes: list[Node]
     target_cell: int
-    request_uuid: str | None
+    request_uuid: UUID | None
 
     @strawberry.field
     async def request(self, info: strawberry.types.Info) -> "Request | None":
@@ -119,8 +119,8 @@ class RequestInput:
 @strawberry.input
 class AssignmentInput:
     """Input for a robot assignment"""
-    robot: str  # Name of the robot
-    jobs: list[int]  # List of node IDs to visit in order
+    robot_name: str  # Name of the robot
+    route_node_ids: list[int]  # List of node IDs to visit in order
 
 
 @strawberry.type
