@@ -1,7 +1,7 @@
 """
 Job serialization helpers for Redis persistence.
 
-All type definitions (Job, Node, Robot, Request, etc.) are in fleet_gateway.api.types.
+Converts Job objects to/from Redis hash format.
 """
 
 from __future__ import annotations
@@ -9,8 +9,6 @@ from __future__ import annotations
 from fleet_gateway.enums import NodeType, WarehouseOperation
 from fleet_gateway.api.types import Job, Node
 
-
-# === Job Serialization Helpers ===
 
 def job_to_dict(job: Job) -> dict:
     """Convert Job object to dict for Redis storage"""

@@ -9,7 +9,7 @@ import json
 from uuid import UUID
 
 from fleet_gateway.enums import NodeType, RobotStatus, WarehouseOperation, RequestStatus
-from .types import Node, MobileBaseState, PiggybackState, Job, Robot, Request
+from ..api.types import Node, MobileBaseState, PiggybackState, Job, Robot, Request
 
 
 def deserialize_node(data: dict) -> Node:
