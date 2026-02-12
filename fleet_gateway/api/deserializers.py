@@ -49,7 +49,17 @@ def deserialize_job(data: dict) -> Job:
     return Job(
         uuid=data['uuid'],
         operation=WarehouseOperation(int(data['operation'])),
-        nodes=[deserialize_node(n) for n in json.loads(data['nodes'])],
+        nodes=[
+            Node(
+                id=int(n['id']),
+                alias=n.get('alias'),
+                x=float(n['x']),
+                y=float(n['y']),
+                height=float(n['height']) if n.get('height') is not None else None,
+                node_type=NodeType(int(n['node_type']))
+            )
+            for n in json.loads(data['nodes'])
+        ],
         target_cell=int(data.get('target_cell', -1)),
         request_uuid=data.get('request_uuid') or None
     )
@@ -67,6 +77,7 @@ def deserialize_robot(data: dict) -> Robot:
         robot_status=RobotStatus(int(data['robot_status'])),
         mobile_base_status=deserialize_mobile_base_state(json.loads(data['mobile_base_status'])),
         piggyback_state=deserialize_piggyback_state(json.loads(data['piggyback_state'])),
+        cell_holdings=json.loads(data.get('cell_holdings', '[]')),
         holdings=[],  # Will be populated separately if needed
         current_job=None,  # Will be populated by deserialize_robot_with_jobs() if needed
         jobs=[]  # Will be populated by deserialize_robot_with_jobs() if needed

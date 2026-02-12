@@ -54,7 +54,7 @@ class PiggybackState:
 @strawberry.type
 class Job:
     """Robot job with operation type and path nodes"""
-    uuid: str | None
+    uuid: str
     operation: WarehouseOperation
     nodes: list[Node]
     target_cell: int
@@ -87,6 +87,11 @@ class Robot:
     robot_status: RobotStatus
     mobile_base_status: MobileBaseState
     piggyback_state: PiggybackState
+
+    # Cell allocations: request UUID per cell (None = empty cell)
+    cell_holdings: list[str | None]
+
+    # Full Request objects for cells that have items
     holdings: list["Request"]
 
     current_job: Job | None

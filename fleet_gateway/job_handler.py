@@ -7,7 +7,8 @@ Handles all job CRUD operations, persistence to Redis, and job lifecycle managem
 import json
 import redis.asyncio as redis
 
-from fleet_gateway.models import Job, job_to_dict, dict_to_job
+from fleet_gateway.api.types import Job
+from fleet_gateway.models import job_to_dict, dict_to_job
 
 
 class JobHandler:

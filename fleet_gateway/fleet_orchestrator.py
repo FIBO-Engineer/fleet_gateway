@@ -12,7 +12,7 @@ from uuid import uuid4
 
 from fleet_gateway.robot_handler import RobotHandler
 from fleet_gateway.job_handler import JobHandler
-from fleet_gateway.models import RobotState, Job, Node
+from fleet_gateway.api.types import Job, Node, Robot
 from fleet_gateway.enums import RobotStatus, WarehouseOperation, RequestStatus, NodeType
 
 
@@ -49,7 +49,7 @@ class FleetOrchestrator:
             and robot.state.current_job is None
         ]
 
-    def get_robot_state(self, robot_name: str) -> RobotState | None:
+    def get_robot_state(self, robot_name: str) -> Robot | None:
         """Get robot state by name."""
         robot = self.get_robot(robot_name)
         return robot.state if robot else None

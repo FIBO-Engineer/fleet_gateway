@@ -1,7 +1,7 @@
 import os
 from supabase import create_client, Client
 
-from fleet_gateway.models import Node
+from fleet_gateway.api.types import Node
 from fleet_gateway.enums import NodeType
 
 

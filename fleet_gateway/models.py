@@ -1,104 +1,13 @@
 """
-Shared data models for the fleet gateway system.
+Job serialization helpers for Redis persistence.
 
-These are plain Python dataclasses that can be used across the system.
-GraphQL schema wraps these with @strawberry.type for API exposure.
+All type definitions (Job, Node, Robot, Request, etc.) are in fleet_gateway.api.types.
 """
 
-from dataclasses import dataclass, field
-from uuid import UUID
+from __future__ import annotations
 
-from fleet_gateway.enums import NodeType, RobotStatus, WarehouseOperation, RequestStatus
-
-
-@dataclass
-class Node:
-    """Node in the warehouse path network"""
-    id: int
-    alias: str | None
-    x: float
-    y: float
-    height: float | None
-    node_type: NodeType
-
-
-@dataclass
-class MobileBaseState:
-    """Mobile base state (position and orientation)"""
-    last_seen: Node
-    x: float
-    y: float
-    a: float  # Angle/orientation
-
-
-@dataclass
-class PiggybackState:
-    """Piggyback manipulator state"""
-    axis_0: float
-    axis_1: float
-    axis_2: float
-    gripper: bool
-
-
-@dataclass
-class Job:
-    """A job for a robot (movement with operation type)"""
-    uuid: str  # Job tracking UUID (mandatory for Redis lookups)
-    operation: WarehouseOperation
-    nodes: list[Node]
-    target_cell: int = -1  # Cell index for PICKUP/DELIVERY, -1 for TRAVEL
-    request_uuid: str | None = None  # Parent request UUID (None for TRAVEL jobs)
-
-
-@dataclass
-class RobotState:
-    """
-    Internal robot state used by RobotHandler.
-
-    Jobs stored as full objects in memory for fast access.
-    Persisted to Redis as UUIDs (jobs stored separately at job:{uuid}).
-    """
-    name: str
-    robot_cell_heights: list[float]
-    robot_status: RobotStatus = RobotStatus.OFFLINE
-    mobile_base_status: MobileBaseState = field(default_factory=lambda: MobileBaseState(
-        last_seen=Node(id=0, alias=None, x=0.0, y=0.0, height=0.0, node_type=NodeType.WAYPOINT),
-        x=0.0,
-        y=0.0,
-        a=0.0
-    ))
-    piggyback_state: PiggybackState = field(default_factory=lambda: PiggybackState(
-        axis_0=0.0,
-        axis_1=0.0,
-        axis_2=0.0,
-        gripper=False
-    ))
-    current_job: Job | None = None  # Full Job object in memory
-    jobs: list[Job] = field(default_factory=list)  # Full Job objects in memory
-    cell_holdings: list[str | None] = field(default_factory=list)  # Request UUIDs
-
-
-@dataclass
-class Robot:
-    """Robot state for GraphQL API"""
-    name: str
-    robot_cell_heights: list[float]
-    robot_status: RobotStatus
-    mobile_base_status: MobileBaseState
-    piggyback_state: PiggybackState
-    holdings: list['Request']
-    current_job: Job | None
-    jobs: list[Job]
-
-
-@dataclass
-class Request:
-    """Warehouse request (pickup + delivery pair)"""
-    uuid: UUID
-    pickup: Job
-    delivery: Job
-    handler: Robot | None
-    request_status: RequestStatus
+from fleet_gateway.enums import NodeType, WarehouseOperation
+from fleet_gateway.api.types import Job, Node
 
 
 # === Job Serialization Helpers ===

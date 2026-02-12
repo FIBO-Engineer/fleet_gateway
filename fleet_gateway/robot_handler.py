@@ -3,14 +3,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from dataclasses import asdict
 from typing import TYPE_CHECKING
 
 import redis.asyncio as redis
 from roslibpy import ActionClient, Goal, Ros, Message, Topic
 
-from fleet_gateway.enums import RobotStatus
-from fleet_gateway.models import RobotState, Job
+from fleet_gateway.enums import RobotStatus, NodeType
+from fleet_gateway.api.types import Job, Node, MobileBaseState, PiggybackState, Robot
 
 if TYPE_CHECKING:
     from fleet_gateway.fleet_orchestrator import FleetOrchestrator
@@ -41,10 +40,26 @@ class RobotHandler(Ros):
         self.orchestrator: FleetOrchestrator | None = None  # Set by FleetOrchestrator after initialization
 
         # Robot state (all operational state in one place)
-        self.state = RobotState(
+        self.state = Robot(
             name=name,
             robot_cell_heights=cell_heights,
-            cell_holdings=[None] * len(cell_heights)
+            robot_status=RobotStatus.OFFLINE,
+            mobile_base_status=MobileBaseState(
+                last_seen=Node(id=0, alias=None, x=0.0, y=0.0, height=0.0, node_type=NodeType.WAYPOINT),
+                x=0.0,
+                y=0.0,
+                a=0.0
+            ),
+            piggyback_state=PiggybackState(
+                axis_0=0.0,
+                axis_1=0.0,
+                axis_2=0.0,
+                gripper=False
+            ),
+            cell_holdings=[None] * len(cell_heights),
+            holdings=[],
+            current_job=None,
+            jobs=[]
         )
 
         # Set up the action client
@@ -285,25 +300,42 @@ class RobotHandler(Ros):
 
     async def _persist_to_redis(self):
         """Save robot state to Redis (jobs stored as UUIDs, full objects kept in memory)"""
-        # Convert entire state to dict for Redis
-        state_dict = asdict(self.state)
-
-        # Convert enum to value for Redis storage
-        state_dict['robot_status'] = str(self.state.robot_status.value)
-
         # Convert jobs to UUIDs for Redis (keep full objects in memory)
         current_job_uuid = self.state.current_job.uuid if self.state.current_job else ''
         job_uuids = [job.uuid for job in self.state.jobs]
 
+        # Serialize mobile_base_status
+        mobile_base_dict = {
+            'last_seen': {
+                'id': self.state.mobile_base_status.last_seen.id,
+                'alias': self.state.mobile_base_status.last_seen.alias,
+                'x': self.state.mobile_base_status.last_seen.x,
+                'y': self.state.mobile_base_status.last_seen.y,
+                'height': self.state.mobile_base_status.last_seen.height,
+                'node_type': self.state.mobile_base_status.last_seen.node_type.value
+            },
+            'x': self.state.mobile_base_status.x,
+            'y': self.state.mobile_base_status.y,
+            'a': self.state.mobile_base_status.a
+        }
+
+        # Serialize piggyback_state
+        piggyback_dict = {
+            'axis_0': self.state.piggyback_state.axis_0,
+            'axis_1': self.state.piggyback_state.axis_1,
+            'axis_2': self.state.piggyback_state.axis_2,
+            'gripper': self.state.piggyback_state.gripper
+        }
+
         robot_data = {
-            'name': state_dict['name'],
-            'robot_cell_heights': json.dumps(state_dict['robot_cell_heights']),
-            'robot_status': state_dict['robot_status'],
-            'mobile_base_status': json.dumps(state_dict['mobile_base_status']),
-            'piggyback_state': json.dumps(state_dict['piggyback_state']),
+            'name': self.state.name,
+            'robot_cell_heights': json.dumps(self.state.robot_cell_heights),
+            'robot_status': str(self.state.robot_status.value),
+            'mobile_base_status': json.dumps(mobile_base_dict),
+            'piggyback_state': json.dumps(piggyback_dict),
             'current_job': current_job_uuid,
             'jobs': json.dumps(job_uuids),
-            'cell_holdings': json.dumps(state_dict['cell_holdings'])
+            'cell_holdings': json.dumps(self.state.cell_holdings)
         }
 
         await self.redis_client.hset(f"robot:{self.state.name}", mapping=robot_data)

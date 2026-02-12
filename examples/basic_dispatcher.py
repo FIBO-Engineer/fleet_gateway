@@ -13,7 +13,7 @@ from uuid import UUID, uuid4
 import redis.asyncio as redis
 from fleet_gateway.robot_handler import RobotHandler
 from fleet_gateway.job_handler import JobHandler
-from fleet_gateway.models import Job, Node
+from fleet_gateway.api.types import Job, Node
 from fleet_gateway.enums import WarehouseOperation, RequestStatus, NodeType
 
 
