@@ -165,10 +165,10 @@ class Mutation:
                         job['request_uuid'] = request_uuid
 
                     # Send job to robot (or queue if busy)
-                    if robot_handler.current_job is None:
+                    if robot_handler.state.current_job is None:
                         await robot_handler.send_job(job, request_uuid)
                     else:
-                        robot_handler.job_queue.append(job)
+                        robot_handler.state.jobs.append(job)
 
                     # Update current position for next path calculation
                     current_node_id = target_node_id

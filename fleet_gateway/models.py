@@ -5,7 +5,7 @@ These are plain Python dataclasses that can be used across the system.
 GraphQL schema wraps these with @strawberry.type for API exposure.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from uuid import UUID
 
 from fleet_gateway.enums import NodeType, RobotStatus, WarehouseOperation, RequestStatus
@@ -48,8 +48,36 @@ class Job:
 
 
 @dataclass
+class RobotState:
+    """
+    Internal robot state used by RobotHandler.
+
+    This is the operational state with simple types (dicts, UUIDs) for efficiency.
+    Separate from the API Robot model which has fully typed objects.
+    """
+    name: str
+    robot_cell_heights: list[float]
+    robot_status: RobotStatus = RobotStatus.OFFLINE
+    mobile_base_status: MobileBaseState = field(default_factory=lambda: MobileBaseState(
+        last_seen=Node(id=0, alias=None, x=0.0, y=0.0, height=0.0, node_type=NodeType.WAYPOINT),
+        x=0.0,
+        y=0.0,
+        a=0.0
+    ))
+    piggyback_state: PiggybackState = field(default_factory=lambda: PiggybackState(
+        axis_0=0.0,
+        axis_1=0.0,
+        axis_2=0.0,
+        gripper=False
+    ))
+    holding_request_uuids: list[str | None] = field(default_factory=list)
+    current_job: dict | None = None
+    jobs: list[dict] = field(default_factory=list)
+
+
+@dataclass
 class Robot:
-    """Robot state"""
+    """Robot state for GraphQL API"""
     name: str
     robot_cell_heights: list[float]
     robot_status: RobotStatus

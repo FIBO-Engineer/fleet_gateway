@@ -60,7 +60,7 @@ async def lifespan(app: FastAPI):
     ]
 
     # Create robot lookup dict
-    app.state.robot_lookup = {rh.name: rh for rh in app.state.robot_handlers}
+    app.state.robot_lookup = {rh.state.name: rh for rh in app.state.robot_handlers}
 
     # Initialize robot states in Redis
     for robot_handler in app.state.robot_handlers:
