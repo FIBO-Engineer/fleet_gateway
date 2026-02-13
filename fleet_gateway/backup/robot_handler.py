@@ -12,7 +12,7 @@ from fleet_gateway.enums import RobotStatus, NodeType
 from fleet_gateway.api.types import Job, Node, MobileBaseState, PiggybackState, Robot
 
 if TYPE_CHECKING:
-    from fleet_gateway.fleet_orchestrator import FleetOrchestrator
+    from fleet_gateway.backup.fleet_orchestrator import FleetOrchestrator
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ class RobotHandler(Ros):
         self.state = Robot(
             name=name,
             robot_cell_heights=cell_heights,
-            robot_status=RobotStatus.OFFLINE,
+            status=RobotStatus.OFFLINE,
             mobile_base_status=MobileBaseState(
                 last_seen=Node(id=0, alias=None, x=0.0, y=0.0, height=0.0, node_type=NodeType.WAYPOINT),
                 x=0.0,
@@ -56,7 +56,7 @@ class RobotHandler(Ros):
                 axis_2=0.0,
                 gripper=False
             ),
-            cell_holdings=[None] * len(cell_heights),
+            holdings=[None] * len(cell_heights),
             holdings=[],
             current_job=None,
             jobs=[]
@@ -123,7 +123,7 @@ class RobotHandler(Ros):
 
     def find_free_cell(self, shelf_height: float) -> int:
         """Find best free cell matching shelf height."""
-        free_indices = (i for i, cell in enumerate(self.state.cell_holdings) if cell is None)
+        free_indices = (i for i, cell in enumerate(self.state.holdings) if cell is None)
         try:
             return min(
                 free_indices,
@@ -135,23 +135,23 @@ class RobotHandler(Ros):
     def find_cell_with_request(self, request_uuid: str) -> int:
         """Find cell index holding the given request."""
         try:
-            return self.state.cell_holdings.index(request_uuid)
+            return self.state.holdings.index(request_uuid)
         except ValueError:
             return -1
 
     def allocate_cell(self, cell_idx: int, request_uuid: str):
         """Allocate a cell for a request."""
-        if 0 <= cell_idx < len(self.state.cell_holdings):
-            self.state.cell_holdings[cell_idx] = request_uuid
+        if 0 <= cell_idx < len(self.state.holdings):
+            self.state.holdings[cell_idx] = request_uuid
 
     def release_cell(self, cell_idx: int):
         """Release a cell after delivery."""
-        if 0 <= cell_idx < len(self.state.cell_holdings):
-            self.state.cell_holdings[cell_idx] = None
+        if 0 <= cell_idx < len(self.state.holdings):
+            self.state.holdings[cell_idx] = None
 
     def get_occupied_cells(self) -> list[bool]:
         """Get list of which cells are occupied."""
-        return [cell is not None for cell in self.state.cell_holdings]
+        return [cell is not None for cell in self.state.holdings]
     
 
     def find_target_cell(self, job: Job) -> int:
@@ -195,7 +195,7 @@ class RobotHandler(Ros):
                         for node in job.nodes
                     ],
             'operation': job.operation.value,
-            'robot_cell': job.target_cell
+            'robot_cell': job.robot_cell
         })
 
         # Create goal
@@ -204,7 +204,7 @@ class RobotHandler(Ros):
         self.state.current_job = job  # Store full Job object
 
         # Set robot status to BUSY
-        self.state.robot_status = RobotStatus.BUSY
+        self.state.status = RobotStatus.BUSY
         await self._persist_to_redis()
 
         # Send goal with callbacks
@@ -226,18 +226,18 @@ class RobotHandler(Ros):
 
         # Update cell holdings based on operation
         from fleet_gateway.enums import WarehouseOperation
-        if self.state.current_job.target_cell >= 0:
+        if self.state.current_job.robot_cell >= 0:
             if self.state.current_job.operation == WarehouseOperation.PICKUP:
-                self.allocate_cell(self.state.current_job.target_cell, self.state.current_job.request_uuid)
+                self.allocate_cell(self.state.current_job.robot_cell, self.state.current_job.request_uuid)
             elif self.state.current_job.operation == WarehouseOperation.DELIVERY:
-                self.release_cell(self.state.current_job.target_cell)
+                self.release_cell(self.state.current_job.robot_cell)
 
         # Clear current job
         self.state.current_job = None
         self.ros_action_goal = None
 
         # Set robot status to IDLE
-        self.state.robot_status = RobotStatus.IDLE
+        self.state.status = RobotStatus.IDLE
 
         # Persist to Redis and publish update
         await self._persist_to_redis()
@@ -261,7 +261,7 @@ class RobotHandler(Ros):
         logger.error(f"[{self.state.name}] Job error: {error}")
         self.state.current_job = None
         self.ros_action_goal = None
-        self.state.robot_status = RobotStatus.ERROR
+        self.state.status = RobotStatus.ERROR
         await self._persist_to_redis()
         await self._publish_update()
 
@@ -272,7 +272,7 @@ class RobotHandler(Ros):
             self.ros_action_goal.cancel()
             self.state.current_job = None
             self.ros_action_goal = None
-            self.state.robot_status = RobotStatus.IDLE
+            self.state.status = RobotStatus.IDLE
             await self._persist_to_redis()
             await self._publish_update()
             return job_id
@@ -293,14 +293,14 @@ class RobotHandler(Ros):
             # await self.cancel_current_job()
             # Won't be inactive if there's job to do
             return
-        self.state.robot_status = RobotStatus.INACTIVE
+        self.state.status = RobotStatus.INACTIVE
         await self._persist_to_redis()
         await self._publish_update()
 
     async def set_active(self) -> None:
         """Re-enable robot from INACTIVE or ERROR status"""
-        if self.state.robot_status in (RobotStatus.INACTIVE, RobotStatus.ERROR):
-            self.state.robot_status = RobotStatus.IDLE
+        if self.state.status in (RobotStatus.INACTIVE, RobotStatus.ERROR):
+            self.state.status = RobotStatus.IDLE
             await self._persist_to_redis()
             await self._publish_update()
 
@@ -336,12 +336,12 @@ class RobotHandler(Ros):
         robot_data = {
             'name': self.state.name,
             'robot_cell_heights': json.dumps(self.state.robot_cell_heights),
-            'robot_status': str(self.state.robot_status.value),
+            'robot_status': str(self.state.status.value),
             'mobile_base_status': json.dumps(mobile_base_dict),
             'piggyback_state': json.dumps(piggyback_dict),
             'current_job': current_job_uuid,
             'jobs': json.dumps(job_uuids),
-            'cell_holdings': json.dumps(self.state.cell_holdings)
+            'cell_holdings': json.dumps(self.state.holdings)
         }
 
         await self.redis_client.hset(f"robot:{self.state.name}", mapping=robot_data)

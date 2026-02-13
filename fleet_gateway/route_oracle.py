@@ -5,7 +5,7 @@ from fleet_gateway.api.types import Node
 from fleet_gateway.enums import NodeType
 
 
-class GraphOracle:
+class RouteOracle:
     def __init__(self, supabase_url: str, supabase_key: str, graph_id: int | None):
         self.url: str = supabase_url # os.environ.get("SUPABASE_URL")
         self.key: str = supabase_key # os.environ.get("SUPABASE_KEY")
@@ -63,9 +63,9 @@ class GraphOracle:
 def main():
     url: str = os.environ.get("SUPABASE_URL")
     key: str = os.environ.get("SUPABASE_KEY")
-    go = GraphOracle(url, key)
-    path = go.getShortestPathByAlias(2, start_alias="W3", end_alias="W8")
-    nodes = go.getNodesByIds(2, path)
+    ro = RouteOracle(url, key)
+    path = ro.getShortestPathByAlias(2, start_alias="W3", end_alias="W8")
+    nodes = ro.getNodesByIds(2, path)
     print(nodes)
 
 if __name__ == "__main__":

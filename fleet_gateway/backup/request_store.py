@@ -4,13 +4,13 @@ Request Store - Centralized request management and persistence.
 Handles all request CRUD operations, persistence to Redis, and request lifecycle management.
 """
 
-import json
 import redis.asyncio as redis
 from uuid import UUID
 from typing import TYPE_CHECKING
 
 from fleet_gateway.api.types import Request
-from fleet_gateway.helpers.serializers import request_to_dict, dict_to_request
+from fleet_gateway.helpers.serializers import request_to_dict
+from fleet_gateway.enums import RequestStatus
 
 if TYPE_CHECKING:
     from fleet_gateway.job_store import JobStore
@@ -67,8 +67,8 @@ class RequestStore():
 
         return request_uuids
 
-    async def get_request(self, request_uuid: str | UUID) -> Request | None:
-        """Fetch request from Redis by UUID"""
+    async def get_request(self, request_uuid: str | UUID, job_store: "JobStore") -> Request | None:
+        """Fetch request from Redis by UUID, including full job objects"""
         if isinstance(request_uuid, UUID):
             request_uuid = str(request_uuid)
 
@@ -83,7 +83,20 @@ class RequestStore():
             for k, v in request_data.items()
         }
 
-        return dict_to_request(request_dict)
+        # Fetch full job objects from JobStore
+        pickup_job = await job_store.get_job(request_dict['pickup'])
+        delivery_job = await job_store.get_job(request_dict['delivery'])
+
+        if not pickup_job or not delivery_job:
+            raise ValueError(f"Jobs not found for request {request_uuid}")
+
+        return Request(
+            uuid=UUID(request_dict['uuid']),
+            pickup=pickup_job,
+            delivery=delivery_job,
+            handling_robot=None,  # Resolved separately via robot name lookup
+            status=RequestStatus(int(request_dict['request_status']))
+        )
 
     async def update_request_status(self, request_uuid: str | UUID, status) -> bool:
         """Update request status and publish update notification"""
@@ -138,30 +151,31 @@ class RequestStore():
             for key in request_keys
         ]
 
-    async def get_all_requests(self) -> list[Request]:
+    async def get_all_requests(self, job_store: "JobStore") -> list[Request]:
         """Get all requests from Redis"""
         requests = []
         request_keys = await self.redis.keys("request:*")
 
         for key in request_keys:
-            request_data = await self.redis.hgetall(key)
-            if request_data:
-                # Convert bytes to strings
-                request_dict = {
-                    k.decode() if isinstance(k, bytes) else k:
-                    v.decode() if isinstance(v, bytes) else v
-                    for k, v in request_data.items()
-                }
-                requests.append(dict_to_request(request_dict))
+            # Extract UUID from key (format: "request:uuid")
+            if isinstance(key, bytes):
+                key_str = key.decode()
+            else:
+                key_str = key
+
+            request_uuid = key_str.split(':', 1)[1]
+            request = await self.get_request(request_uuid, job_store)
+            if request:
+                requests.append(request)
 
         return requests
 
-    async def get_requests_by_status(self, status) -> list[Request]:
+    async def get_requests_by_status(self, status, job_store: "JobStore") -> list[Request]:
         """Get all requests with a specific status"""
-        all_requests = await self.get_all_requests()
-        return [req for req in all_requests if req.request_status == status]
+        all_requests = await self.get_all_requests(job_store)
+        return [req for req in all_requests if req.status == status]
 
-    async def get_requests_by_handler(self, handler_name: str) -> list[Request]:
+    async def get_requests_by_handler(self, handler_name: str, job_store: "JobStore") -> list[Request]:
         """Get all requests assigned to a specific robot handler"""
         requests = []
         request_keys = await self.redis.keys("request:*")
@@ -178,6 +192,9 @@ class RequestStore():
 
                 # Check if this request belongs to the handler
                 if request_dict.get('handler') == handler_name:
-                    requests.append(dict_to_request(request_dict))
+                    request_uuid = request_dict['uuid']
+                    request = await self.get_request(request_uuid, job_store)
+                    if request:
+                        requests.append(request)
 
         return requests

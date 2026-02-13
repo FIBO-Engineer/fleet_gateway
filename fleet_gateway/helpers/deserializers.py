@@ -60,7 +60,7 @@ def deserialize_job(data: dict) -> Job:
             )
             for n in json.loads(data['nodes'])
         ],
-        target_cell=int(data.get('target_cell', -1)),
+        robot_cell=int(data.get('target_cell', -1)),
         request_uuid=data.get('request_uuid') or None
     )
 
@@ -74,10 +74,10 @@ def deserialize_robot(data: dict) -> Robot:
     return Robot(
         name=data['name'],
         robot_cell_heights=[float(h) for h in json.loads(data['robot_cell_heights'])],
-        robot_status=RobotStatus(int(data['robot_status'])),
+        status=RobotStatus(int(data['robot_status'])),
         mobile_base_status=deserialize_mobile_base_state(json.loads(data['mobile_base_status'])),
         piggyback_state=deserialize_piggyback_state(json.loads(data['piggyback_state'])),
-        cell_holdings=json.loads(data.get('cell_holdings', '[]')),
+        holdings=json.loads(data.get('cell_holdings', '[]')),
         holdings=[],  # Will be populated separately if needed
         current_job=None,  # Will be populated by deserialize_robot_with_jobs() if needed
         jobs=[]  # Will be populated by deserialize_robot_with_jobs() if needed
@@ -90,8 +90,8 @@ def deserialize_request(data: dict, robot_lookup: dict[str, Robot]) -> Request:
         uuid=UUID(data['uuid']),
         pickup=deserialize_job(json.loads(data['pickup'])),
         delivery=deserialize_job(json.loads(data['delivery'])),
-        handler=robot_lookup.get(data['handler']),
-        request_status=RequestStatus(int(data['request_status']))
+        handling_robot=robot_lookup.get(data['handler']),
+        status=RequestStatus(int(data['request_status']))
     )
 
 

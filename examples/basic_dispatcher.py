@@ -11,7 +11,7 @@ import asyncio
 import json
 from uuid import UUID, uuid4
 import redis.asyncio as redis
-from fleet_gateway.robot_handler import RobotHandler
+from fleet_gateway.backup.robot_handler import RobotHandler
 from fleet_gateway.job_store import JobStore
 from fleet_gateway.api.types import Job, Node
 from fleet_gateway.enums import WarehouseOperation, RequestStatus, NodeType
@@ -132,7 +132,7 @@ async def send_pickup_delivery_request(
             uuid=pickup_job_uuid,
             operation=WarehouseOperation.PICKUP,
             nodes=pickup_node_objs,
-            target_cell=target_cell,
+            robot_cell=target_cell,
             request_uuid=request_uuid
         )
         await robot_handler.send_job(pickup_job)
@@ -146,7 +146,7 @@ async def send_pickup_delivery_request(
             uuid=delivery_job_uuid,
             operation=WarehouseOperation.DELIVERY,
             nodes=delivery_node_objs,
-            target_cell=target_cell,
+            robot_cell=target_cell,
             request_uuid=request_uuid
         )
         # Persist job to Redis using JobStore

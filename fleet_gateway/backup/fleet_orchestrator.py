@@ -9,8 +9,8 @@ robot handler internals.
 import redis.asyncio as redis
 from uuid import uuid4, UUID
 
-from fleet_gateway.robot_handler import RobotHandler
-from fleet_gateway.graph_oracle import GraphOracle
+from fleet_gateway.backup.robot_handler import RobotHandler
+from fleet_gateway.route_oracle import RouteOracle
 from fleet_gateway.job_store import JobStore
 from fleet_gateway.request_store import RequestStore
 from fleet_gateway.api.types import Job, Robot, Request, RequestInput, AssignmentInput
@@ -20,7 +20,7 @@ from fleet_gateway.enums import RobotStatus, WarehouseOperation, RequestStatus
 class FleetOrchestrator:
     """Central coordinator for robot fleet management and job dispatching."""
 
-    def __init__(self, robot_handlers: list[RobotHandler], redis_client: redis.Redis, graph_oracle: GraphOracle):
+    def __init__(self, robot_handlers: list[RobotHandler], redis_client: redis.Redis, graph_oracle: RouteOracle):
         """Initialize fleet orchestrator with robot handlers and Redis client."""
         self.robots: dict[str, RobotHandler] = {
             robot.state.name: robot for robot in robot_handlers
@@ -48,7 +48,7 @@ class FleetOrchestrator:
         """Get robots available for work (IDLE, no current job)."""
         return [
             name for name, robot in self.robots.items()
-            if robot.state.robot_status == RobotStatus.IDLE
+            if robot.state.status == RobotStatus.IDLE
             and robot.state.current_job is None
         ]
 
@@ -66,7 +66,7 @@ class FleetOrchestrator:
             uuid=job.uuid,
             operation=job.operation,
             nodes=job.nodes,
-            target_cell=robot.find_target_cell(job),
+            robot_cell=robot.find_target_cell(job),
             request_uuid=job.request_uuid
         )
 
@@ -74,7 +74,7 @@ class FleetOrchestrator:
         await self.jobs.upsert_job(job_with_cell)
 
         # If robot is idle, send job immediately
-        if robot.state.current_job is None and robot.state.robot_status == RobotStatus.IDLE:
+        if robot.state.current_job is None and robot.state.status == RobotStatus.IDLE:
             await robot.send_job(job_with_cell)
         else:
             # Robot is busy, queue the job (store full Job object)
@@ -111,25 +111,111 @@ class FleetOrchestrator:
     # === Request Management ===
 
     async def submit_requests_and_assignments(
-        self, 
+        self,
         request_inputs: list[RequestInput],
         assignments: list[AssignmentInput],
     ) -> list[UUID]:
-        """Submit warehouse requests and robot assignments with path planning."""
+        """Submit warehouse requests and robot assignments.
 
+        Creates Request and Job objects and persists to Redis.
+        Does NOT dispatch jobs - that happens later via assign_job().
+
+        Args:
+            request_inputs: List of pickup/delivery pairs (e.g., pickup=7, delivery=10)
+            assignments: List of robot routes (e.g., robot="R1", route=[7,8,9,10])
+
+        Returns:
+            List of created request UUIDs
+        """
         requests: list[Request] = []
 
-        for req in request_inputs:
-            for robot_name, route_node_ids in assignments:
-                if req.pickup_id in route_node_ids and req.delivery_id in route_node_ids:
-                    # Late routing for inactive scenario
-                    request_uuid = uuid4()
-                    pickup_job = Job(uuid4(), WarehouseOperation.PICKUP, self.graph_oracle.getNodesByIds(req.pickup_id), -1, request_uuid)
-                    delivery_job = Job(uuid4(), WarehouseOperation.DELIVERY, self.graph_oracle.getNodesByIds(req.pickup_id), -1, request_uuid)
-                    requests.append(Request(request_uuid, pickup_job, delivery_job, self.get_robot(robot_name), RequestStatus.IN_PROGRESS))
+        # Build lookup: node_id -> list of assignments containing that node
+        node_to_assignments: dict[int, list[tuple[AssignmentInput, int]]] = {}
+        for assignment in assignments:
+            for idx, node_id in enumerate(assignment.route_node_ids):
+                if node_id not in node_to_assignments:
+                    node_to_assignments[node_id] = []
+                node_to_assignments[node_id].append((assignment, idx))
 
+        # Process each request
+        for req in request_inputs:
+            # Find assignments containing both pickup and delivery
+            pickup_candidates = node_to_assignments.get(req.pickup_id, [])
+            delivery_candidates = node_to_assignments.get(req.delivery_id, [])
+
+            # Find assignment that contains both nodes
+            matched_assignment = None
+            pickup_idx = -1
+            delivery_idx = -1
+
+            for p_assignment, p_idx in pickup_candidates:
+                for d_assignment, d_idx in delivery_candidates:
+                    if p_assignment.robot_name == d_assignment.robot_name:
+                        # Same assignment contains both nodes
+                        if p_idx < d_idx:  # Pickup comes before delivery
+                            matched_assignment = p_assignment
+                            pickup_idx = p_idx
+                            delivery_idx = d_idx
+                            break
+                if matched_assignment:
+                    break
+
+            # Validation
+            if matched_assignment is None:
+                raise ValueError(
+                    f"No valid assignment found for request: pickup={req.pickup_id}, "
+                    f"delivery={req.delivery_id}. Either nodes not in any assignment "
+                    f"or delivery comes before pickup."
+                )
+
+            # Get robot handler
+            robot = self.get_robot(matched_assignment.robot_name)
+            if robot is None:
+                raise ValueError(f"Robot '{matched_assignment.robot_name}' not found")
+
+            # Fetch node information (just destination nodes, not paths)
+            try:
+                pickup_nodes = self.graph_oracle.getNodesByIds(None, [req.pickup_id])
+                delivery_nodes = self.graph_oracle.getNodesByIds(None, [req.delivery_id])
+            except RuntimeError as e:
+                raise RuntimeError(f"Failed to fetch nodes from graph: {e}") from e
+
+            if not pickup_nodes or not delivery_nodes:
+                raise ValueError(
+                    f"Invalid node IDs: pickup={req.pickup_id}, delivery={req.delivery_id}"
+                )
+
+            # Create request and jobs
+            request_uuid = uuid4()
+            pickup_job = Job(
+                uuid=str(uuid4()),
+                operation=WarehouseOperation.PICKUP,
+                nodes=pickup_nodes,  # Just destination node for now
+                robot_cell=-1,  # Computed later by assign_job
+                request_uuid=str(request_uuid)
+            )
+            delivery_job = Job(
+                uuid=str(uuid4()),
+                operation=WarehouseOperation.DELIVERY,
+                nodes=delivery_nodes,  # Just destination node for now
+                robot_cell=-1,  # Computed later by assign_job
+                request_uuid=str(request_uuid)
+            )
+
+            request = Request(
+                uuid=request_uuid,
+                pickup=pickup_job,
+                delivery=delivery_job,
+                handling_robot=robot.state,  # Robot state object, not RobotHandler
+                status=RequestStatus.IN_PROGRESS
+            )
+            requests.append(request)
+
+        # Persist all requests and jobs to Redis
         uuids = await self.requests.upsert_all(requests, self.jobs)
-        return uuids
+
+        # Return UUIDs as UUID objects
+        return [UUID(uuid_str) for uuid_str in uuids]
 
     # === Fleet Status ===
 

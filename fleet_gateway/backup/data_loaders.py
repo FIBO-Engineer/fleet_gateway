@@ -9,8 +9,8 @@ import logging
 import redis.asyncio as redis
 from uuid import UUID
 
-from .types import Robot, Request
-from .deserializers import deserialize_robot, deserialize_robot_with_jobs, deserialize_request
+from ..api.types import Robot, Request
+from helpers.deserializers import deserialize_robot, deserialize_robot_with_jobs, deserialize_request
 
 logger = logging.getLogger(__name__)
 
@@ -145,8 +145,8 @@ async def load_all_robots_with_holdings(r: redis.Redis) -> list[Robot]:
             try:
                 request = deserialize_request(data, robot_lookup)
                 # Add request to its handler's holdings
-                if request.handler and request.handler.name in robot_lookup:
-                    robot_lookup[request.handler.name].holdings.append(request)
+                if request.handling_robot and request.handling_robot.name in robot_lookup:
+                    robot_lookup[request.handling_robot.name].holdings.append(request)
             except (KeyError, ValueError, json.JSONDecodeError) as e:
                 logger.error(f"Error deserializing request {key}: {e}")
                 continue

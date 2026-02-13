@@ -1,0 +1,23 @@
+flowchart LR
+  Main[main]
+  RouteOracle[route_oracle]
+  Redis[(redis)]
+  FleetHandler[fleet_handler]
+  OrderStore[order_store]
+  WarehouseController[warehouse_controller]
+  GraphQLApp[graphql_app]
+
+  Main --> RouteOracle
+  Main --> Redis
+  Main --> FleetHandler
+  Main --> OrderStore
+  Main --> WarehouseController
+  Main --> GraphQLApp
+
+  GraphQLApp -->|reads| Redis
+  FleetHandler -->|sync/persist| Redis
+  OrderStore -->|store/load orders| Redis
+
+  WarehouseController -->|uses| RouteOracle
+  WarehouseController -->|uses| FleetHandler
+  WarehouseController -->|uses| OrderStore
