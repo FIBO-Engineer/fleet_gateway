@@ -26,7 +26,7 @@ class RobotStatus(Enum):
     ERROR = 4  # Robot encountered an error
 
 
-class WarehouseOperation(Enum):
+class JobOperation(Enum):
     """Warehouse operation types for jobs"""
     TRAVEL = 0
     PICKUP = 1

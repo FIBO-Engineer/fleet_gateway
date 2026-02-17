@@ -11,10 +11,10 @@ import asyncio
 import json
 from uuid import UUID, uuid4
 import redis.asyncio as redis
-from fleet_gateway.backup.robot_handler import RobotHandler
+from fleet_gateway.robot_connector import RobotConnector
 from fleet_gateway.job_store import JobStore
 from fleet_gateway.api.types import Job, Node
-from fleet_gateway.enums import WarehouseOperation, RequestStatus, NodeType
+from fleet_gateway.enums import JobOperation, RequestStatus, NodeType
 
 
 async def create_request_in_redis(
@@ -38,12 +38,12 @@ async def create_request_in_redis(
     request_uuid = str(uuid4())
 
     pickup_job = {
-        'operation': WarehouseOperation.PICKUP.value,
+        'operation': JobOperation.PICKUP.value,
         'nodes': pickup_nodes
     }
 
     delivery_job = {
-        'operation': WarehouseOperation.DELIVERY.value,
+        'operation': JobOperation.DELIVERY.value,
         'nodes': delivery_nodes
     }
 
@@ -62,7 +62,7 @@ async def create_request_in_redis(
 
 
 async def send_pickup_delivery_request(
-    robot_handler: RobotHandler,
+    robot_handler: RobotConnector,
     r: redis.Redis,
     pickup_nodes: list[dict],
     delivery_nodes: list[dict]
@@ -130,7 +130,7 @@ async def send_pickup_delivery_request(
         # Create pickup job
         pickup_job = Job(
             uuid=pickup_job_uuid,
-            operation=WarehouseOperation.PICKUP,
+            operation=JobOperation.PICKUP,
             nodes=pickup_node_objs,
             robot_cell=target_cell,
             request_uuid=request_uuid
@@ -144,7 +144,7 @@ async def send_pickup_delivery_request(
         # Create and queue delivery job (store UUID only)
         delivery_job = Job(
             uuid=delivery_job_uuid,
-            operation=WarehouseOperation.DELIVERY,
+            operation=JobOperation.DELIVERY,
             nodes=delivery_node_objs,
             robot_cell=target_cell,
             request_uuid=request_uuid
@@ -163,7 +163,7 @@ async def send_pickup_delivery_request(
         await r.publish(f"request:{request_uuid}:update", "updated")
 
 
-async def send_travel_job(robot_handler: RobotHandler, waypoint_nodes: list[dict]):
+async def send_travel_job(robot_handler: RobotConnector, waypoint_nodes: list[dict]):
     """
     Send a simple travel job to a robot.
 
@@ -176,7 +176,7 @@ async def send_travel_job(robot_handler: RobotHandler, waypoint_nodes: list[dict
 
     travel_job = {
         'uuid': job_uuid,
-        'operation': WarehouseOperation.TRAVEL.value,
+        'operation': JobOperation.TRAVEL.value,
         'nodes': waypoint_nodes,
         'target_cell': -1  # No cell needed for TRAVEL
     }
@@ -194,7 +194,7 @@ async def main():
     r = redis.Redis(host='localhost', port=6379, decode_responses=True)
 
     # Create a robot handler (normally this would be done in main.py)
-    robot = RobotHandler(
+    robot = RobotConnector(
         name='Lertvilai',
         host_ip='192.168.123.171',
         port=8002,

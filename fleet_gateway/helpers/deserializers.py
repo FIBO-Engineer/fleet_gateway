@@ -8,7 +8,7 @@ back into typed Python objects for GraphQL responses.
 import json
 from uuid import UUID
 
-from fleet_gateway.enums import NodeType, RobotStatus, WarehouseOperation, RequestStatus
+from fleet_gateway.enums import NodeType, RobotStatus, JobOperation, RequestStatus
 from ..api.types import Node, MobileBaseState, PiggybackState, Job, Robot, Request
 
 
@@ -27,7 +27,7 @@ def deserialize_node(data: dict) -> Node:
 def deserialize_mobile_base_state(data: dict) -> MobileBaseState:
     """Convert Redis mobile base state to MobileBaseState type"""
     return MobileBaseState(
-        last_seen=deserialize_node(json.loads(data['last_seen'])),
+        estimated_tag=deserialize_node(json.loads(data['last_seen'])),
         x=float(data['x']),
         y=float(data['y']),
         a=float(data['a'])
@@ -48,7 +48,7 @@ def deserialize_job(data: dict) -> Job:
     """Convert Redis job data to Job type"""
     return Job(
         uuid=data['uuid'],
-        operation=WarehouseOperation(int(data['operation'])),
+        operation=JobOperation(int(data['operation'])),
         nodes=[
             Node(
                 id=int(n['id']),

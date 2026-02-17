@@ -9,20 +9,20 @@ robot handler internals.
 import redis.asyncio as redis
 from uuid import uuid4, UUID
 
-from fleet_gateway.backup.robot_handler import RobotHandler
+from fleet_gateway.robot_connector import RobotConnector
 from fleet_gateway.route_oracle import RouteOracle
 from fleet_gateway.job_store import JobStore
 from fleet_gateway.request_store import RequestStore
 from fleet_gateway.api.types import Job, Robot, Request, RequestInput, AssignmentInput
-from fleet_gateway.enums import RobotStatus, WarehouseOperation, RequestStatus
+from fleet_gateway.enums import RobotStatus, JobOperation, RequestStatus
 
 
 class FleetOrchestrator:
     """Central coordinator for robot fleet management and job dispatching."""
 
-    def __init__(self, robot_handlers: list[RobotHandler], redis_client: redis.Redis, graph_oracle: RouteOracle):
+    def __init__(self, robot_handlers: list[RobotConnector], redis_client: redis.Redis, graph_oracle: RouteOracle):
         """Initialize fleet orchestrator with robot handlers and Redis client."""
-        self.robots: dict[str, RobotHandler] = {
+        self.robots: dict[str, RobotConnector] = {
             robot.state.name: robot for robot in robot_handlers
         }
         self.redis = redis_client
@@ -36,7 +36,7 @@ class FleetOrchestrator:
 
     # === Robot Access ===
 
-    def get_robot(self, robot_name: str) -> RobotHandler | None:
+    def get_robot(self, robot_name: str) -> RobotConnector | None:
         """Get robot handler by name."""
         return self.robots.get(robot_name)
 
@@ -59,7 +59,7 @@ class FleetOrchestrator:
 
     # === Job Management ===
 
-    async def assign_job(self, robot: RobotHandler, job: Job) -> bool:
+    async def assign_job(self, robot: RobotConnector, job: Job) -> bool:
         """Assign job to robot (queues if busy, allocates cells)."""
         # Create final job with computed target_cell
         job_with_cell = Job(
@@ -82,16 +82,16 @@ class FleetOrchestrator:
 
         return True
 
-    async def cancel_job(self, robot: RobotHandler) -> str: # UUID of canceled job
+    async def cancel_job(self, robot: RobotConnector) -> str: # UUID of canceled job
         """Cancel currently executing job (will become a dangling job)"""
         return await robot.cancel_current_job()
 
-    async def clear_job_queue(self, robot: RobotHandler) -> int:
+    async def clear_job_queue(self, robot: RobotConnector) -> int:
         """Clear all queued jobs and return count"""
         return await robot.clear_job_queue()
 
     # === Robot Control ===
-    async def set_robot_enabled(self, robot: RobotHandler, enabled: bool) -> bool:
+    async def set_robot_enabled(self, robot: RobotConnector, enabled: bool) -> bool:
         """Enable or disable robot (disable cancels current job)"""
         if enabled:
             await robot.set_active()
@@ -101,7 +101,7 @@ class FleetOrchestrator:
 
     # === Job Queue Management ===
 
-    async def on_robot_job_completed(self, robot: RobotHandler) -> None:
+    async def on_robot_job_completed(self, robot: RobotConnector) -> None:
         """Handle job completion: update cells, process next queued job."""
         # Process next queued job if available
         if robot.state.jobs:
@@ -189,14 +189,14 @@ class FleetOrchestrator:
             request_uuid = uuid4()
             pickup_job = Job(
                 uuid=str(uuid4()),
-                operation=WarehouseOperation.PICKUP,
+                operation=JobOperation.PICKUP,
                 nodes=pickup_nodes,  # Just destination node for now
                 robot_cell=-1,  # Computed later by assign_job
                 request_uuid=str(request_uuid)
             )
             delivery_job = Job(
                 uuid=str(uuid4()),
-                operation=WarehouseOperation.DELIVERY,
+                operation=JobOperation.DELIVERY,
                 nodes=delivery_nodes,  # Just destination node for now
                 robot_cell=-1,  # Computed later by assign_job
                 request_uuid=str(request_uuid)

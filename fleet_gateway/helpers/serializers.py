@@ -6,7 +6,7 @@ Converts Job and Request objects to/from Redis hash format.
 
 from __future__ import annotations
 
-from fleet_gateway.enums import NodeType, WarehouseOperation
+from fleet_gateway.enums import NodeType, JobOperation
 from fleet_gateway.api.types import Job, Node, Request
 
 
@@ -36,7 +36,7 @@ def dict_to_job(data: dict) -> Job:
     """Convert dict from Redis to Job object"""
     return Job(
         uuid=data['uuid'],
-        operation=WarehouseOperation(int(data['operation'])),
+        operation=JobOperation(int(data['operation'])),
         nodes=[
             Node(
                 id=int(n['id']),
@@ -63,4 +63,14 @@ def request_to_dict(request: Request) -> dict:
         'request_status': request.status.value
     }
 
+def node_to_dict(node: Node) -> dict:
+    """Convert Node object to dict"""
+    return {
+        'id': node.id,
+        'alias': node.alias or '',
+        'x': node.x,
+        'y': node.y,
+        'height': node.height or 0.0,
+        'node_type': node.node_type.value
+    }
 

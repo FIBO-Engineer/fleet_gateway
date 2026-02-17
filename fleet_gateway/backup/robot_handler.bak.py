@@ -45,7 +45,7 @@ class RobotHandler(Ros):
             robot_cell_heights=cell_heights,
             status=RobotStatus.OFFLINE,
             mobile_base_status=MobileBaseState(
-                last_seen=Node(id=0, alias=None, x=0.0, y=0.0, height=0.0, node_type=NodeType.WAYPOINT),
+                estimated_tag=Node(id=0, alias=None, x=0.0, y=0.0, height=0.0, node_type=NodeType.WAYPOINT),
                 x=0.0,
                 y=0.0,
                 a=0.0
@@ -117,7 +117,7 @@ class RobotHandler(Ros):
     # === Location ===
     def get_current_node(self):
         """Get robot's current node ID from Redis."""
-        return self.state.mobile_base_status.last_seen
+        return self.state.mobile_base_status.estimated_tag
 
     # === Cell Management ===
 
@@ -156,17 +156,17 @@ class RobotHandler(Ros):
 
     def find_target_cell(self, job: Job) -> int:
         """Find appropriate target cell for job based on operation type"""
-        from fleet_gateway.enums import WarehouseOperation
+        from fleet_gateway.enums import JobOperation
 
         match job.operation:
-            case WarehouseOperation.PICKUP:
+            case JobOperation.PICKUP:
                 shelf_height = job.nodes[-1].height if job.nodes[-1].height is not None else 0.0
                 target_cell = self.find_free_cell(shelf_height)
                 if target_cell == -1:
                     raise RuntimeError(f"No free cell available for pickup on robot '{self.state.name}'")
                 return target_cell
 
-            case WarehouseOperation.DELIVERY:
+            case JobOperation.DELIVERY:
                 if not job.request_uuid:
                     raise RuntimeError("request_uuid is required for DELIVERY operation")
                 target_cell = self.find_cell_with_request(job.request_uuid)
@@ -225,11 +225,11 @@ class RobotHandler(Ros):
         logger.info(f"[{self.state.name}] Job {self.state.current_job.uuid} completed with result: {result}")
 
         # Update cell holdings based on operation
-        from fleet_gateway.enums import WarehouseOperation
+        from fleet_gateway.enums import JobOperation
         if self.state.current_job.robot_cell >= 0:
-            if self.state.current_job.operation == WarehouseOperation.PICKUP:
+            if self.state.current_job.operation == JobOperation.PICKUP:
                 self.allocate_cell(self.state.current_job.robot_cell, self.state.current_job.request_uuid)
-            elif self.state.current_job.operation == WarehouseOperation.DELIVERY:
+            elif self.state.current_job.operation == JobOperation.DELIVERY:
                 self.release_cell(self.state.current_job.robot_cell)
 
         # Clear current job
@@ -253,7 +253,7 @@ class RobotHandler(Ros):
 
         # Update last seen node
         if 'last_seen_id' in feedback:
-            self.state.mobile_base_status.last_seen.id = feedback['last_seen_id']
+            self.state.mobile_base_status.estimated_tag.id = feedback['last_seen_id']
             await self._persist_to_redis()
 
     async def _on_job_error(self, error):
@@ -313,12 +313,12 @@ class RobotHandler(Ros):
         # Serialize mobile_base_status
         mobile_base_dict = {
             'last_seen': {
-                'id': self.state.mobile_base_status.last_seen.id,
-                'alias': self.state.mobile_base_status.last_seen.alias,
-                'x': self.state.mobile_base_status.last_seen.x,
-                'y': self.state.mobile_base_status.last_seen.y,
-                'height': self.state.mobile_base_status.last_seen.height,
-                'node_type': self.state.mobile_base_status.last_seen.node_type.value
+                'id': self.state.mobile_base_status.estimated_tag.id,
+                'alias': self.state.mobile_base_status.estimated_tag.alias,
+                'x': self.state.mobile_base_status.estimated_tag.x,
+                'y': self.state.mobile_base_status.estimated_tag.y,
+                'height': self.state.mobile_base_status.estimated_tag.height,
+                'node_type': self.state.mobile_base_status.estimated_tag.node_type.value
             },
             'x': self.state.mobile_base_status.x,
             'y': self.state.mobile_base_status.y,
