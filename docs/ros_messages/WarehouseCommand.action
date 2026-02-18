@@ -18,5 +18,4 @@ uint8 operation
 int8 robot_cell  
 ---
 ---
-uint64 last_seen_id
 uint8 moving_component
