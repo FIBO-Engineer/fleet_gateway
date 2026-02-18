@@ -102,7 +102,7 @@ robot:{name} (hash)
   - name
   - robot_cell_heights (JSON array)
   - robot_status (int)
-  - mobile_base_status (JSON)
+  - mobile_base_state (JSON)
   - piggyback_state (JSON)
   - current_job (JSON)
   - jobs (JSON array)

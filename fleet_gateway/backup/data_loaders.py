@@ -10,7 +10,7 @@ import redis.asyncio as redis
 from uuid import UUID
 
 from ..api.types import Robot, Request
-from helpers.deserializers import deserialize_robot, deserialize_robot_with_jobs, deserialize_request
+from fleet_gateway.backup.deserializers import deserialize_robot, deserialize_robot_with_jobs, deserialize_request
 
 logger = logging.getLogger(__name__)
 
@@ -196,11 +196,11 @@ async def get_robot_current_node(r: redis.Redis, robot_name: str) -> int | None:
     """
     robot_data = await r.hgetall(f"robot:{robot_name}")
 
-    if not robot_data or 'mobile_base_status' not in robot_data:
+    if not robot_data or 'mobile_base_state' not in robot_data:
         return None
 
     try:
-        mobile_base_status = json.loads(robot_data['mobile_base_status'])
-        return mobile_base_status['last_seen']['id']
+        mobile_base_state = json.loads(robot_data['mobile_base_state'])
+        return mobile_base_state['last_seen']['id']
     except (KeyError, ValueError, json.JSONDecodeError):
         return None

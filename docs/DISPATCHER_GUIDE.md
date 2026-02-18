@@ -85,7 +85,7 @@ For each target node in `jobs`, the system:
 
 ```python
 # Get robot's current position
-current_node_id = robot.mobile_base_status.last_seen.id
+current_node_id = robot.mobile_base_state.last_seen.id
 
 # Query shortest path
 path_node_ids = graph_oracle.getShortestPathById(

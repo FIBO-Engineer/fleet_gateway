@@ -20,6 +20,7 @@ class RobotConnector(Ros):
         self.ros_action_goal: Goal | None = None
 
         # Robot state (all operational state in one place)
+        self.name = name
         self.status = RobotStatus.OFFLINE
         self.mobile_base_state = MobileBaseState()
         self.piggyback_state = PiggybackState()
@@ -40,22 +41,27 @@ class RobotConnector(Ros):
         # TODO: Fix to actual message type
         if 'pose' in message:
             pose = message['pose']
-            self.state.mobile_base_status.x = pose['position']['x']
-            self.state.mobile_base_status.y = pose['position']['y']
+            self.state.mobile_base_state.x = pose['position']['x']
+            self.state.mobile_base_state.y = pose['position']['y']
             # Extract yaw from quaternion
             z = pose['orientation']['z']
             w = pose['orientation']['w']
-            self.state.mobile_base_status.a = 2.0 * (w * z)  # Simplified yaw extraction
+            self.state.mobile_base_state.a = 2.0 * (w * z)  # Simplified yaw extraction
 
     def on_piggyback_update(self, message):
         """Callback for piggyback state updates"""
-        # TODO: Fix to actual name
-        if 'position' in message and len(message['position']) >= 3:
-            self.state.piggyback_state.axis_0 = message['position'][0]
-            self.state.piggyback_state.axis_1 = message['position'][1]
-            self.state.piggyback_state.axis_2 = message['position'][2]
+        if 'name' in message and 'position' in message:
+            joint_names = message['name']
+            positions = message['position']
+            joint_attrs = ['lift', 'turntable', 'insert', 'hook']
+            for joint_name in joint_attrs:
+                try:
+                    idx = joint_names.index(joint_name)
+                    setattr(self.piggyback_state, joint_name, positions[idx])
+                except ValueError:
+                    pass
 
-    async def send_job(self, job: Job) -> bool:
+    def send_job(self, job: Job) -> bool:
         """Send job to robot via ROS action. Use docs/ros_messages/WarehouseCommand.action"""
         """The Job resolve to target node here"""
 
@@ -102,7 +108,7 @@ class RobotConnector(Ros):
             """Handle job feedback"""
             # Update last seen node
             if 'estimated_tag_id' in feedback:
-                self.state.mobile_base_status.estimated_tag.id = feedback['estimated_tag_id']
+                self.state.mobile_base_state.estimated_tag.id = feedback['estimated_tag_id']
 
         def on_error(error):
             """Handle job error"""
@@ -112,3 +118,12 @@ class RobotConnector(Ros):
 
         goal.send(on_result=on_result, on_feedback=on_feedback, on_error=on_error)
         return True
+    
+    def toRobot(self):
+        """Convert RobotConnector state to Robot object"""
+        return Robot(
+            name=self.name,
+            status=self.status,
+            mobile_base_state=self.mobile_base_state,
+            piggyback_state=self.piggyback_state
+        )

@@ -37,7 +37,7 @@ All robot state is persisted to Redis as a hash at key `robot:{name}`:
     'name': 'Lertvilai',
     'robot_cell_heights': '[0.5, 1.0, 1.5]',
     'robot_status': '1',  # IDLE
-    'mobile_base_status': '{"last_seen": {...}, "x": 0.0, "y": 0.0, "a": 0.0}',
+    'mobile_base_state': '{"last_seen": {...}, "x": 0.0, "y": 0.0, "a": 0.0}',
     'piggyback_state': '{"axis_0": 0.0, "axis_1": 0.0, "axis_2": 0.0, "gripper": false}',
     'current_job': '{"operation": 1, "nodes": [...]}',
     'jobs': '[...]'

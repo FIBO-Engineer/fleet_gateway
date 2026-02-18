@@ -44,17 +44,17 @@ class RobotHandler(Ros):
             name=name,
             robot_cell_heights=cell_heights,
             status=RobotStatus.OFFLINE,
-            mobile_base_status=MobileBaseState(
+            mobile_base_state=MobileBaseState(
                 estimated_tag=Node(id=0, alias=None, x=0.0, y=0.0, height=0.0, node_type=NodeType.WAYPOINT),
                 x=0.0,
                 y=0.0,
                 a=0.0
             ),
             piggyback_state=PiggybackState(
-                axis_0=0.0,
-                axis_1=0.0,
-                axis_2=0.0,
-                gripper=False
+                lift=0.0,
+                turntable=0.0,
+                insert=0.0,
+                hook=False
             ),
             holdings=[None] * len(cell_heights),
             holdings=[],
@@ -94,12 +94,12 @@ class RobotHandler(Ros):
         """Callback for mobile base state updates"""
         if 'pose' in message:
             pose = message['pose']
-            self.state.mobile_base_status.x = pose['position']['x']
-            self.state.mobile_base_status.y = pose['position']['y']
+            self.state.mobile_base_state.x = pose['position']['x']
+            self.state.mobile_base_state.y = pose['position']['y']
             # Extract yaw from quaternion
             z = pose['orientation']['z']
             w = pose['orientation']['w']
-            self.state.mobile_base_status.a = 2.0 * (w * z)  # Simplified yaw extraction
+            self.state.mobile_base_state.a = 2.0 * (w * z)  # Simplified yaw extraction
 
             # Persist to Redis asynchronously
             asyncio.create_task(self._persist_to_redis())
@@ -107,9 +107,9 @@ class RobotHandler(Ros):
     def _on_piggyback_update(self, message):
         """Callback for piggyback state updates"""
         if 'position' in message and len(message['position']) >= 3:
-            self.state.piggyback_state.axis_0 = message['position'][0]
-            self.state.piggyback_state.axis_1 = message['position'][1]
-            self.state.piggyback_state.axis_2 = message['position'][2]
+            self.state.piggyback_state.lift = message['position'][0]
+            self.state.piggyback_state.turntable = message['position'][1]
+            self.state.piggyback_state.insert = message['position'][2]
 
             # Persist to Redis asynchronously
             asyncio.create_task(self._persist_to_redis())
@@ -117,7 +117,7 @@ class RobotHandler(Ros):
     # === Location ===
     def get_current_node(self):
         """Get robot's current node ID from Redis."""
-        return self.state.mobile_base_status.estimated_tag
+        return self.state.mobile_base_state.estimated_tag
 
     # === Cell Management ===
 
@@ -253,7 +253,7 @@ class RobotHandler(Ros):
 
         # Update last seen node
         if 'last_seen_id' in feedback:
-            self.state.mobile_base_status.estimated_tag.id = feedback['last_seen_id']
+            self.state.mobile_base_state.estimated_tag.id = feedback['last_seen_id']
             await self._persist_to_redis()
 
     async def _on_job_error(self, error):
@@ -310,34 +310,34 @@ class RobotHandler(Ros):
         current_job_uuid = self.state.current_job.uuid if self.state.current_job else ''
         job_uuids = [job.uuid for job in self.state.jobs]
 
-        # Serialize mobile_base_status
+        # Serialize mobile_base_state
         mobile_base_dict = {
             'last_seen': {
-                'id': self.state.mobile_base_status.estimated_tag.id,
-                'alias': self.state.mobile_base_status.estimated_tag.alias,
-                'x': self.state.mobile_base_status.estimated_tag.x,
-                'y': self.state.mobile_base_status.estimated_tag.y,
-                'height': self.state.mobile_base_status.estimated_tag.height,
-                'node_type': self.state.mobile_base_status.estimated_tag.node_type.value
+                'id': self.state.mobile_base_state.estimated_tag.id,
+                'alias': self.state.mobile_base_state.estimated_tag.alias,
+                'x': self.state.mobile_base_state.estimated_tag.x,
+                'y': self.state.mobile_base_state.estimated_tag.y,
+                'height': self.state.mobile_base_state.estimated_tag.height,
+                'node_type': self.state.mobile_base_state.estimated_tag.node_type.value
             },
-            'x': self.state.mobile_base_status.x,
-            'y': self.state.mobile_base_status.y,
-            'a': self.state.mobile_base_status.a
+            'x': self.state.mobile_base_state.x,
+            'y': self.state.mobile_base_state.y,
+            'a': self.state.mobile_base_state.a
         }
 
         # Serialize piggyback_state
         piggyback_dict = {
-            'axis_0': self.state.piggyback_state.axis_0,
-            'axis_1': self.state.piggyback_state.axis_1,
-            'axis_2': self.state.piggyback_state.axis_2,
-            'gripper': self.state.piggyback_state.gripper
+            'axis_0': self.state.piggyback_state.lift,
+            'axis_1': self.state.piggyback_state.turntable,
+            'axis_2': self.state.piggyback_state.insert,
+            'gripper': self.state.piggyback_state.hook
         }
 
         robot_data = {
             'name': self.state.name,
             'robot_cell_heights': json.dumps(self.state.robot_cell_heights),
             'robot_status': str(self.state.status.value),
-            'mobile_base_status': json.dumps(mobile_base_dict),
+            'mobile_base_state': json.dumps(mobile_base_dict),
             'piggyback_state': json.dumps(piggyback_dict),
             'current_job': current_job_uuid,
             'jobs': json.dumps(job_uuids),

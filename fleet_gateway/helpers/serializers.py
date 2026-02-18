@@ -3,74 +3,88 @@ Job and Request serialization helpers for Redis persistence.
 
 Converts Job and Request objects to/from Redis hash format.
 """
-
-from __future__ import annotations
-
-from fleet_gateway.enums import NodeType, JobOperation
-from fleet_gateway.api.types import Job, Node, Request
-
-
-def job_to_dict(job: Job) -> dict:
-    """Convert Job object to dict for Redis storage"""
-    import json
-    return {
-        'uuid': job.uuid,
-        'operation': job.operation.value,
-        'nodes': json.dumps([
-            {
-                'id': n.id,
-                'alias': n.alias,
-                'x': n.x,
-                'y': n.y,
-                'height': n.height,
-                'node_type': n.node_type.value
-            }
-            for n in job.nodes
-        ]),
-        'robot_cell': job.robot_cell,
-        'request': job.request. or ''
-    }
-
-
-def dict_to_job(data: dict) -> Job:
-    """Convert dict from Redis to Job object"""
-    return Job(
-        uuid=data['uuid'],
-        operation=JobOperation(int(data['operation'])),
-        nodes=[
-            Node(
-                id=int(n['id']),
-                alias=n.get('alias'),
-                x=float(n['x']),
-                y=float(n['y']),
-                height=float(n['height']) if n.get('height') is not None else None,
-                node_type=NodeType(int(n['node_type']))
-            )
-            for n in data['nodes']
-        ],
-        robot_cell=int(data.get('robot_cell', -1)),
-        request_uuid=data.get('request_uuid') or None
-    )
-
-
-def request_to_dict(request: Request) -> dict:
-    """Convert Request object to dict for Redis storage"""
-    return {
-        'uuid': str(request.uuid),
-        'pickup': request.pickup.uuid,
-        'delivery': request.delivery.uuid,
-        'handler': request.handling_robot.name if request.handling_robot else '',
-        'request_status': request.status.value
-    }
+import json
+from fleet_gateway.api.types import Node, Request, Job
 
 def node_to_dict(node: Node) -> dict:
     """Convert Node object to dict"""
     return {
         'id': node.id,
-        'alias': node.alias or '',
+        'alias': node.alias,
         'x': node.x,
         'y': node.y,
-        'height': node.height or 0.0,
+        'height': node.height,
         'node_type': node.node_type.value
     }
+
+def request_to_dict(request: Request) -> dict:
+    """Convert Request object to dict for Redis storage"""
+    return {
+        'uuid': str(request.uuid),
+        'status': request.status.value,
+        'pickup': str(request._pickup_uuid),
+        'delivery': str(request._delivery_uuid),
+        'handling_robot': request._handling_robot_name,
+    }
+
+def job_to_dict(job: Job) -> dict:
+    """Convert Job object to dict for Redis storage"""
+    return {
+        'uuid': str(job.uuid),
+        'operation': job.operation.value,
+        'target_node': json.dumps(node_to_dict(job.target_node)),
+        'request': str(job._request_uuid) if job._request_uuid is not None else None,
+        'handling_robot': job._handling_robot_name
+    }
+
+# Not really needed yet, store as variable
+
+# def mobile_base_state_to_dict(mobile_base_state: MobileBaseState) -> dict:
+#     """Convert Mobile Base state"""
+#     return {
+#         'estimated_tag': node_to_dict(mobile_base_state.estimated_tag) if mobile_base_state.estimated_tag else {},
+#         'x': mobile_base_state.x,
+#         'y': mobile_base_state.y,
+#         'a': mobile_base_state.a
+#     }
+
+# def piggyback_state_to_dict(piggyback_state: PiggybackState) -> dict:
+#     """Convert Piggyback state"""
+#     return {
+#         'lift': piggyback_state.lift, 
+#         'turntable': piggyback_state.turntable,
+#         'insert': piggyback_state.insert,
+#         'hook': piggyback_state.hook
+#     }
+
+
+# def robot_to_dict(robot: Robot) -> dict:
+#     """Save robot state to Redis (jobs stored as UUIDs, full objects kept in memory)"""
+
+#     mobile_base_dict = mobile_base_state_to_dict(robot.mobile_base_state)
+#     piggyback_dict = piggyback_dict(robot.piggyback_state)
+
+#     return {
+#         'name': robot.name,
+#         'status': robot.status.value,
+#         'mobile_base_state': mobile_base_dict,
+#         'piggyback_state': piggyback_dict,
+#         'cells': json.dumps([robot_cell_to_dict(robot_cell) for robot_cell in robot.cells]),
+#         'current_job': robot.current_job.uuid if robot.current_job else '',
+#         'job_queue': json.dumps([job.uuid for job in robot.job_queue]),
+#     }
+
+# def robot_cell_to_dict(robot_cell: RobotCell) -> dict:
+#     """Convert RobotCell object to dict"""
+#     return {
+#         'robot': robot_cell.robot.name,
+#         'height': robot_cell.height,
+#         'holding': robot_cell.holding.uuid if robot_cell.holding else ''
+#     }
+
+
+
+
+
+
 

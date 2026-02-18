@@ -227,9 +227,9 @@ class FleetOrchestrator:
     #             'has_current_job': robot.state.current_job is not None,
     #             'queued_jobs': len(robot.state.jobs),
     #             'position': {
-    #                 'x': robot.state.mobile_base_status.x,
-    #                 'y': robot.state.mobile_base_status.y,
-    #                 'a': robot.state.mobile_base_status.a,
+    #                 'x': robot.state.mobile_base_state.x,
+    #                 'y': robot.state.mobile_base_state.y,
+    #                 'a': robot.state.mobile_base_state.a,
     #             }
     #         }
     #         for name, robot in self.robots.items()
@@ -262,8 +262,8 @@ class FleetOrchestrator:
     #     # Find closest available robot
     #     def distance(robot_name: str) -> float:
     #         robot = self.robots[robot_name]
-    #         robot_x = robot.state.mobile_base_status.x
-    #         robot_y = robot.state.mobile_base_status.y
+    #         robot_x = robot.state.mobile_base_state.x
+    #         robot_y = robot.state.mobile_base_state.y
     #         return ((robot_x - target_x) ** 2 + (robot_y - target_y) ** 2) ** 0.5
 
     #     return min(available, key=distance)

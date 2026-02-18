@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from strawberry.fastapi import GraphQLRouter
 
-from fleet_gateway.robot_connector import RobotConnector
+from fleet_gateway.fleet_handler import FleetHandler
 from fleet_gateway.route_oracle import RouteOracle
 from fleet_gateway.backup.fleet_orchestrator import FleetOrchestrator
 from fleet_gateway.api import schema
