@@ -1,23 +1,31 @@
+---
+config:
+  layout: elk
+---
 flowchart LR
-  Main[main]
-  RouteOracle[route_oracle]
-  Redis[(redis)]
-  FleetHandler[fleet_handler]
-  OrderStore[order_store]
-  WarehouseController[warehouse_controller]
-  GraphQLApp[graphql_app]
+  RouteOracle[Route Oracle]
+  Redis[(Redis)]
+  Postgres[(Postgres)]
+  FleetHandler[Fleet Handler <br> ]
+  RobotConnector[Robot Connector]
+  OrderStore[Order Store]
+  WarehouseController[Warehouse <br> Controller]
+  User[User]
+  GraphQL[GraphQL <br> Interface]
 
-  Main --> RouteOracle
-  Main --> Redis
-  Main --> FleetHandler
-  Main --> OrderStore
-  Main --> WarehouseController
-  Main --> GraphQLApp
+  GraphQL <--> User
 
-  GraphQLApp -->|reads| Redis
-  FleetHandler -->|sync/persist| Redis
-  OrderStore -->|store/load orders| Redis
+  GraphQL --> WarehouseController
+  OrderStore --> GraphQL
+  FleetHandler --> GraphQL
 
-  WarehouseController -->|uses| RouteOracle
-  WarehouseController -->|uses| FleetHandler
-  WarehouseController -->|uses| OrderStore
+  OrderStore <--> Redis
+
+  WarehouseController <--> OrderStore
+
+  WarehouseController --> FleetHandler
+
+  Postgres <--> RouteOracle
+  RouteOracle --> RobotConnector
+  FleetHandler --> RobotConnector
+  RobotConnector --> Robot
