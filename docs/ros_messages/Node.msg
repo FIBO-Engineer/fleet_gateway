@@ -7,6 +7,7 @@ uint8 DEPOT=4
 
 uint64 id
 string alias
+string tag_id
 float64 x
 float64 y
 float64 height
