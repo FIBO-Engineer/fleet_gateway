@@ -30,9 +30,9 @@ def dict_to_request(data: dict) -> Request | None:
     return Request(
         uuid=UUID(data['uuid']),
         status=RequestStatus(int(data['status'])),
-        _pickup_uuid=UUID(data['pickup']),
-        _delivery_uuid=UUID(data['delivery']),
-        _handling_robot_name=data['handling_robot']
+        pickup_uuid=UUID(data['pickup']),
+        delivery_uuid=UUID(data['delivery']),
+        handling_robot_name=data['handling_robot']
     )
 
 
@@ -45,6 +45,6 @@ def dict_to_job(data: dict) -> Job | None:
         uuid=UUID(data['uuid']),
         operation=JobOperation(int(data['operation'])),
         target_node=dict_to_node(json.loads(data['target_node'])),
-        _request_uuid=UUID(data['request']) if data.get('request') else None,
-        _handling_robot_name=data['handling_robot']
+        request_uuid=UUID(data['request']) if data.get('request') else None,
+        handling_robot_name=data['handling_robot']
     )

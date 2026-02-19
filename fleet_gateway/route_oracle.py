@@ -12,6 +12,20 @@ class RouteOracle:
         self.graph_id: int | None = graph_id
         self.supabase: Client = create_client(self.url, self.key)
 
+    def getNodeFromTagId(self, graph_id: int | None, tag_id: int) -> Node:
+        if graph_id is None:
+            if self.graph_id is None:
+                raise RuntimeError("Unknown graph_id, define in function or ctor")
+            else:
+                graph_id = self.graph_id
+        res = self.supabase.rpc("wh_get_node_by_tag_id",
+                                      {"p_graph_id": graph_id, "p_tag_id": tag_id}
+                                      ).execute()
+        if not res.data:
+            raise LookupError(f"No node for tag_id={tag_id}")
+        data = res.data[0]
+        return Node(data["id"], data.get("alias"), data["tag_id"], data["x"], data["y"], data.get("height"), NodeType(data["type"]))
+
     def getNodesByIds(self, graph_id: int | None, node_ids: list[int]) -> list[Node]:
         if graph_id is None:
             if self.graph_id is None:

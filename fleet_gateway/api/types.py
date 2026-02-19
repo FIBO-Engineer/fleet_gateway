@@ -9,6 +9,7 @@ import strawberry
 from uuid import UUID
 from typing import TYPE_CHECKING
 from fleet_gateway import request_store
+from datetime import datetime
 
 from fleet_gateway import enums
 import fleet_gateway.api.type_resolvers as resolvers
@@ -16,7 +17,7 @@ import fleet_gateway.api.type_resolvers as resolvers
 # For type checking, use the plain enums
 # At runtime, use the Strawberry-wrapped versions
 if TYPE_CHECKING:
-    from fleet_gateway.enums import NodeType, RobotStatus, JobOperation, RequestStatus
+    from fleet_gateway.enums import NodeType, RobotConnectionStatus, RobotActionStatus, JobOperation, RequestStatus
 else:
     NodeType = strawberry.enum(enums.NodeType)
     RobotStatus = strawberry.enum(enums.RobotStatus)
@@ -30,6 +31,7 @@ class Node:
     """Warehouse path network node"""
     id: int
     alias: str | None
+    tag_id: str | None
     x: float
     y: float
     height: float
@@ -44,9 +46,9 @@ class Request:
     delivery: Job = strawberry.field(resolver=resolvers.get_delievery_job_by_request)
     handling_robot: Robot = strawberry.field(resolver=resolvers.get_handling_robot_by_request)
     # Private variables
-    _pickup_uuid: strawberry.Private[UUID]
-    _delivery_uuid: strawberry.Private[UUID]
-    _handling_robot_name: strawberry.Private[str]
+    pickup_uuid: strawberry.Private[UUID]
+    delivery_uuid: strawberry.Private[UUID]
+    handling_robot_name: strawberry.Private[str]
 
 @strawberry.type
 class Job:
@@ -55,43 +57,57 @@ class Job:
     uuid: UUID
     operation: JobOperation
     target_node: Node
-    request: Request | None = strawberry.field(resolver=resolvers.get_request_by_job, default=None)
+    request: Request | None = strawberry.field(resolver=resolvers.get_request_by_job)
     handling_robot: Robot = strawberry.field(resolver=resolvers.get_handling_robot_by_job)
     # Private variables
-    _request_uuid: strawberry.Private[UUID | None] = None
-    _handling_robot_name: strawberry.Private[str]
+    request_uuid: strawberry.Private[UUID | None]
+    handling_robot_name: strawberry.Private[str]
+
+
+@strawberry.type
+class Tag:
+    timestamp: datetime
+    qr_id: str
+
+@strawberry.type
+class Pose:
+    timestamp: datetime
+    x: float
+    y: float
+    a: float
 
 @strawberry.type
 class MobileBaseState:
     """Mobile base position and orientation"""
-    estimated_tag: Node | None = None 
-    x: float | None = None
-    y: float | None = None
-    a: float | None = None
+    tag: Tag | None
+    pose: Pose | None
 
 @strawberry.type
 class PiggybackState:
     """Piggyback manipulator state"""
-    lift: float | None = None
-    turntable: float | None = None
-    insert: float | None = None
-    hook: bool | None = None
+    timestamp: datetime
+    lift: float
+    turntable: float
+    slide: float
+    hook_left: float
+    hook_right: float
 
 @strawberry.type
 class Robot:
     """Robot state and configuration"""
     name: str
-    status: RobotStatus
-    mobile_base_state: MobileBaseState
-    piggyback_state: PiggybackState
+    connection_status: RobotConnectionStatus
+    action_status: RobotActionStatus
+    mobile_base_state: MobileBaseState | None
+    piggyback_state: PiggybackState | None
 
     # Cell allocations: request UUID per cell (None = empty cell)
     cells: list[RobotCell] = strawberry.field(resolver=resolvers.get_robot_cells_by_robot)
     current_job: Job | None = strawberry.field(resolver=resolvers.get_current_job_by_robot, default=None)
     job_queue: list[Job] = strawberry.field(resolver=resolvers.get_job_queue_by_robot)
     # Private variables
-    _current_job_uuid: strawberry.Private[UUID | None] = None
-    _job_queue_uuid: strawberry.Private[list[UUID]] = strawberry.field(default_factory=list)
+    current_job_uuid: strawberry.Private[UUID | None] = None
+    job_queue_uuid: strawberry.Private[list[UUID]] = strawberry.field(default_factory=list)
 
     
 @strawberry.type
@@ -100,7 +116,7 @@ class RobotCell:
     height: float
     holding: Request | None = strawberry.field(resolver=resolvers.get_holding_by_robot_cell, default=None)
     # Private variables
-    _holding_uuid: strawberry.Private[str | None] = None
+    holding_uuid: strawberry.Private[str | None] = None
 
 # Input types for mutations
 @strawberry.input

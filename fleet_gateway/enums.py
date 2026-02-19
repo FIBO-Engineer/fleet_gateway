@@ -16,15 +16,17 @@ class NodeType(Enum):
     CELL = 3
     DEPOT = 4
 
-
-class RobotStatus(Enum):
-    """Robot operational status"""
+class RobotConnectionStatus(Enum):
+    """Robot Connection status"""
     OFFLINE = 0
-    IDLE = 1
-    INACTIVE = 2  # User manually disabled this robot
-    BUSY = 3
-    ERROR = 4  # Robot encountered an error
+    ONLINE = 1
 
+class RobotActionStatus(Enum):
+    """Robot operational status"""
+    IDLE = 0
+    OPERATING = 1  # Robot is working
+    ERROR = 2  # Robot encountered an error
+    CANCELLED = 3 # Robot operation was cancelled
 
 class JobOperation(Enum):
     """Warehouse operation types for jobs"""

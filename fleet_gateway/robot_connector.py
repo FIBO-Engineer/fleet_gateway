@@ -1,11 +1,13 @@
 import asyncio
+from datetime import datetime, timezone, timedelta
+
 from fleet_gateway.route_oracle import RouteOracle
 from fleet_gateway.helpers.serializers import node_to_dict
 
 from roslibpy import ActionClient, Goal, Ros, Message, Topic
 
-from fleet_gateway.enums import RobotStatus, NodeType
-from fleet_gateway.api.types import Robot, Job, Node, MobileBaseState, PiggybackState
+from fleet_gateway.enums import RobotConnectionStatus, RobotActionStatus, NodeType
+from fleet_gateway.api.types import Robot, Job, Node, MobileBaseState, Pose, Tag, PiggybackState
 
 class RobotConnector(Ros):
     """
@@ -21,57 +23,73 @@ class RobotConnector(Ros):
 
         # Robot state (all operational state in one place)
         self.name = name
-        self.status = RobotStatus.OFFLINE
-        self.mobile_base_state = MobileBaseState()
-        self.piggyback_state = PiggybackState()
+        self.action_status = RobotActionStatus.IDLE
+        self.mobile_base_state = None
+        self.piggyback_state = None
 
-        # Set up the action client
+        # Setup the action client
         self.warehouse_cmd_action_client = ActionClient(self, '/warehouse_command', 'warehouse_server/WarehouseCommandAction')
-        self.mobile_base_topic = Topic(self, '/mobile_base/state', 'geometry_msgs/PoseStamped')
-        self.mobile_base_topic.subscribe(self.on_mobile_base_update)
-        self.piggyback_topic = Topic(self, '/piggyback/state', 'sensor_msgs/JointState')
-        self.piggyback_topic.subscribe(self.on_piggyback_update)
+        
+        # Setup Mobile Base State Subscribers
+        self.odom_topic = Topic(self, '/odom_qr', 'nav_msgs/Odometry')
+        self.odom_topic.subscribe(self.odom_qr_callback)
+        self.qr_topic = Topic(self, '/qr_id', 'std_msgs/String')
+        self.qr_topic.subscribe(self.qr_id_callback)
+        
+        # Setup Piggyback State Subscribers
+        self.piggyback_topic = Topic(self, '/piggyback_state', 'sensor_msgs/JointState')
+        self.piggyback_topic.subscribe(self.piggyback_callback)
 
         # Setup route oracle
         self.route_oracle: RouteOracle = route_oracle
 
-
-    def on_mobile_base_update(self, message):
+    def odom_qr_callback(self, message):
         """Callback for mobile base state updates"""
-        # TODO: Fix to actual message type
         if 'pose' in message:
-            pose = message['pose']
-            self.state.mobile_base_state.x = pose['position']['x']
-            self.state.mobile_base_state.y = pose['position']['y']
-            # Extract yaw from quaternion
-            z = pose['orientation']['z']
-            w = pose['orientation']['w']
-            self.state.mobile_base_state.a = 2.0 * (w * z)  # Simplified yaw extraction
+            orientation = message['pose']['orientation']
+            a = 2.0 * (orientation['w'] * orientation['z'])  # Simplified yaw extraction
+            pose = Pose(datetime.now(timezone(timedelta(hours=7))), message['pose']['x'], message['pose']['y'], a)
+            if self.mobile_base_state is None:
+                self.mobile_base_state = MobileBaseState(None, pose)
+            else:
+                self.mobile_base_state.pose = pose
+    
+    def qr_id_callback(self, message):
+        """"Callback for QR"""
+        if 'data' in message:
+            tag = Tag(datetime.now(timezone(timedelta(hours=7))), message['data'])
+            if self.mobile_base_state is None:
+                self.mobile_base_state = MobileBaseState(tag, None)
+            else:
+                self.mobile_base_state.tag = tag
 
-    def on_piggyback_update(self, message):
+    def piggyback_callback(self, message):
         """Callback for piggyback state updates"""
         if 'name' in message and 'position' in message:
-            joint_names = message['name']
-            positions = message['position']
-            joint_attrs = ['lift', 'turntable', 'insert', 'hook']
-            for joint_name in joint_attrs:
-                try:
-                    idx = joint_names.index(joint_name)
-                    setattr(self.piggyback_state, joint_name, positions[idx])
-                except ValueError:
-                    pass
+            try:
+                self.piggyback_state = PiggybackState(
+                    datetime.now(timezone(timedelta(hours=7))),
+                    message["position"][message['name'].index('lift')],
+                    message["position"][message['name'].index('turntable')],
+                    message["position"][message['name'].index('slide')],
+                    message["position"][message['name'].index('hook_left')],
+                    message["position"][message['name'].index('hook_right')]
+                )
+            except ValueError:
+                pass
 
     def send_job(self, job: Job) -> bool:
         """Send job to robot via ROS action. Use docs/ros_messages/WarehouseCommand.action"""
         """The Job resolve to target node here"""
 
-        if self.mobile_base_state.estimated_tag is None:
+        if self.mobile_base_state.tag is None:
             raise RuntimeError("Unable to route its location to the destination due to unknown current location")
 
         # Known current location
-        path_nodes_id : list[int] = self.route_oracle.getShortestPathById(start_id=self.mobile_base_state.estimated_tag.id, end_id=job.target_node)
+        start_node: Node = self.route_oracle.getNodeFromTagId(tag_id=self.mobile_base_state.tag.qr_id)
+        path_nodes_id : list[int] = self.route_oracle.getShortestPathById(start_id=start_node.id, end_id=job.target_node.id)
         path_nodes : list[Node] = self.route_oracle.getNodesByIds(node_ids=path_nodes_id)
-        
+        # TODO: Continue checking here
         goal_msg = Message({
             'nodes': [ node_to_dict(node) for node in path_nodes ],
             'operation': job.operation.value,
@@ -81,10 +99,9 @@ class RobotConnector(Ros):
         # Create goal
         goal = Goal(self.warehouse_cmd_action_client, goal_msg)
         self.ros_action_goal = goal
-        self.state.current_job = job  # Store full Job object
 
         # Set robot status to BUSY
-        self.state.status = RobotStatus.BUSY
+        self.action_status = RobotActionStatus.BUSY
 
         # Send goal with callbacks
         def on_result(result):
@@ -123,7 +140,8 @@ class RobotConnector(Ros):
         """Convert RobotConnector state to Robot object"""
         return Robot(
             name=self.name,
-            status=self.status,
+            connection_status=RobotConnectionStatus(self.is_connected),
+            action_status=,
             mobile_base_state=self.mobile_base_state,
             piggyback_state=self.piggyback_state
         )

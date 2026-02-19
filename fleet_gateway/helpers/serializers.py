@@ -22,9 +22,9 @@ def request_to_dict(request: Request) -> dict:
     return {
         'uuid': str(request.uuid),
         'status': request.status.value,
-        'pickup': str(request._pickup_uuid),
-        'delivery': str(request._delivery_uuid),
-        'handling_robot': request._handling_robot_name,
+        'pickup': str(request.pickup_uuid),
+        'delivery': str(request.delivery_uuid),
+        'handling_robot': request.handling_robot_name,
     }
 
 def job_to_dict(job: Job) -> dict:
@@ -33,8 +33,8 @@ def job_to_dict(job: Job) -> dict:
         'uuid': str(job.uuid),
         'operation': job.operation.value,
         'target_node': json.dumps(node_to_dict(job.target_node)),
-        'request': str(job._request_uuid) if job._request_uuid is not None else None,
-        'handling_robot': job._handling_robot_name
+        'request': str(job.request_uuid) if job.request_uuid is not None else None,
+        'handling_robot': job.handling_robot_name
     }
 
 # Not really needed yet, store as variable

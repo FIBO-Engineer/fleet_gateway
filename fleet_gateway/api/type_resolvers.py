@@ -9,6 +9,7 @@ import strawberry
 from fleet_gateway.api.types import Job, Robot, Request, OrderResult, Node, RobotCell
 from order_store import OrderStore, JobStore
 from fleet_handler import FleetHandler
+from typing import cast
 
 
 # Field resolvers for Request type (called from types.py)
@@ -16,68 +17,53 @@ from fleet_handler import FleetHandler
 async def get_pickup_job_by_request(request: Request, info: strawberry.types.Info) -> Job:
     """Resolve pickup Job from Request."""
     order_store: OrderStore = info.context["order_store"]
-    return order_store.get_pickup_job_by_request(request)
+    return order_store.get_job(request.pickup_uuid)
 
 
 async def get_delievery_job_by_request(request: Request, info: strawberry.types.Info) -> Job:
     """Resolve delivery Job from Request."""
     order_store: OrderStore = info.context["order_store"]
-    return order_store.get_delievery_job_by_request(request)
+    return order_store.get_job(request.delivery_uuid)
 
 
 async def get_handling_robot_by_request(request: Request, info: strawberry.types.Info) -> Robot | None:
     """Resolve handling Robot from Request."""
-    order_store: OrderStore = info.context["order_store"]
-    return order_store.get_handling_robot_by_request(request)
-
+    fleet_handler: FleetHandler = info.context["order_store"]
+    return fleet_handler.get_robot(request.handling_robot_name)
 
 # Field resolvers for Job type (called from types.py)
-
-async def get_target_node_by_job(job: Job, info: strawberry.types.Info) -> Node | None:
-    """Resolve target Node from Job."""
-    order_store: OrderStore = info.context["order_store"]
-    return order_store.get_target_node_by_job(job)
-
 
 async def get_request_by_job(job: Job, info: strawberry.types.Info) -> Request | None:
     """Resolve Request from Job."""
     order_store: OrderStore = info.context["order_store"]
-    return order_store.get_request_by_job(job)
+    return order_store.get_request(job.request_uuid)
 
 
 async def get_handling_robot_by_job(job: Job, info: strawberry.types.Info) -> Robot:
     """Resolve handling Robot from Job."""
     order_store: OrderStore = info.context["order_store"]
-    return order_store.get_handling_robot_by_job(job)
+    return order_store.get_robot(job.handling_robot_name)
 
 
 # Field resolvers for Robot type (called from types.py)
 async def get_robot_cells_by_robot(robot: Robot, info: strawberry.types.Info) -> list[RobotCell]:
     """Resolve robot cells from Robot."""
     fleet_handler: FleetHandler = info.context["fleet_handler"]
-    return fleet_handler.get_robot_cells_by_robot(robot)
-
+    return fleet_handler.get_robot_cells(robot.name)
 
 async def get_current_job_by_robot(robot: Robot, info: strawberry.types.Info) -> Job | None:
     """Resolve current Job from Robot."""
     fleet_handler: FleetHandler = info.context["fleet_handler"]
-    return fleet_handler.get_current_job_by_robot(robot)
-
+    return fleet_handler.get_current_job(robot.name)
 
 async def get_job_queue_by_robot(robot: Robot, info: strawberry.types.Info) -> list[Job]:
     """Resolve job queue from Robot."""
     fleet_handler: FleetHandler = info.context["fleet_handler"]
-    return fleet_handler.get_job_queue_by_robot(robot)
+    return fleet_handler.get_job_queue(robot.name)
 
 
 # Field resolvers for RobotCell type (called from types.py)
-# async def get_robot_by_robot_cell(root: RobotCell, info: strawberry.types.Info) -> Robot:
-#     """Resolve Robot from RobotCell."""
-#     fleet_handler: FleetHandler = info.context["fleet_handler"]
-#     return fleet_handler.get_robot_by_robot_cell(root)
-
-
 async def get_holding_by_robot_cell(robot_cell: RobotCell, info: strawberry.types.Info) -> Request | None:
     """Resolve holding Request from RobotCell."""
     order_store: OrderStore = info.context["order_store"]
-    return order_store.get_holding_by_robot_cell(robot_cell)
+    return order_store.get_request(robot_cell.holding_uuid)
