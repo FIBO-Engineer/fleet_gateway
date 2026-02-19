@@ -11,7 +11,7 @@ from fleet_gateway.enums import NodeType, JobOperation, RequestStatus
 from fleet_gateway.api.types import Node, Request, Job
 
 
-def dict_to_node(data: dict) -> Node:
+def dict_to_node(data: dict) -> Node | None:
     """Convert dict to Node object"""
     return Node(
         id=int(data['id']),
@@ -23,8 +23,10 @@ def dict_to_node(data: dict) -> Node:
     )
 
 
-def dict_to_request(data: dict) -> Request:
+def dict_to_request(data: dict) -> Request | None:
     """Convert dict from Redis storage to Request object"""
+    if not data:
+        return None
     return Request(
         uuid=UUID(data['uuid']),
         status=RequestStatus(int(data['status'])),
@@ -34,9 +36,11 @@ def dict_to_request(data: dict) -> Request:
     )
 
 
-def dict_to_job(data: dict) -> Job:
+def dict_to_job(data: dict) -> Job | None:
     """Convert dict from Redis storage to Job object"""
     # Parse target_node if it's a dict, otherwise assume it's already parsed
+    if not data:
+        return None
     return Job(
         uuid=UUID(data['uuid']),
         operation=JobOperation(int(data['operation'])),
