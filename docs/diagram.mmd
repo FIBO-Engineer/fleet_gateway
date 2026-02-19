@@ -12,12 +12,25 @@ flowchart LR
   WarehouseController[Warehouse <br> Controller]
   User[User]
   GraphQL[GraphQL <br> Interface]
+  
+  subgraph Robot
+  %% direction LR
+    WarehouseAction[Warehouse <br>Command Action]
+    MobileBaseAction[Mobile Base Action]
+    PiggybackAction[Piggyback Action]
+    MobileBaseState[Mobile Base State]
+    PiggybackState[Piggyback State]
+    
+    WarehouseAction --> MobileBaseAction
+    WarehouseAction --> PiggybackAction
+  end
 
   GraphQL <--> User
 
   GraphQL --> WarehouseController
   OrderStore --> GraphQL
   FleetHandler --> GraphQL
+  FleetHandler --> RobotConnector
 
   OrderStore <--> Redis
 
@@ -26,6 +39,14 @@ flowchart LR
   WarehouseController --> FleetHandler
 
   Postgres <--> RouteOracle
+  RobotConnector --> WarehouseAction
   RouteOracle --> RobotConnector
-  FleetHandler --> RobotConnector
-  RobotConnector --> Robot
+  
+  
+  
+  PiggybackState --> RobotConnector
+  MobileBaseState --> RobotConnector
+
+  
+
+  %% RobotConnector --> 

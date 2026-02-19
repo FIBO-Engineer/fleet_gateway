@@ -1,0 +1,53 @@
+---
+config:
+  layout: elk
+---
+flowchart LR
+  RouteOracle[Route Oracle]
+  %% Redis[(Redis)]
+  Postgres[(Postgres)]
+  %% FleetHandler[Fleet Handler]
+  RobotConnector[Robot Connector]
+  %% OrderStore[Order Store]
+  %% WarehouseController[Warehouse <br> Controller]
+  Frontend[Frontend]
+  %% GraphQL[GraphQL <br> Interface]
+  
+  subgraph Robot
+  %% direction LR
+    WarehouseAction[Warehouse <br>Command Action]
+    MobileBaseAction[Mobile Base Action]
+    PiggybackAction[Piggyback Action]
+    %% MobileBaseState[Mobile Base State]
+    %% PiggybackState[Piggyback State]
+    
+    WarehouseAction --> MobileBaseAction
+    WarehouseAction --> PiggybackAction
+  end
+
+  GraphQL <--> Frontend
+  GraphQL --> RobotConnector
+
+  %% GraphQL --> WarehouseController
+  %% OrderStore --> GraphQL
+  %% FleetHandler --> GraphQL
+  %% FleetHandler --> RobotConnector
+
+  %% OrderStore <--> Redis
+
+  %% WarehouseController <--> OrderStore
+
+  %% WarehouseController --> FleetHandler
+
+  Postgres <--> RouteOracle
+  RobotConnector --> WarehouseAction
+  RouteOracle --> RobotConnector
+  
+  
+  
+  %% PiggybackState --> RobotConnector
+  %% MobileBaseState --> RobotConnector
+
+  
+
+  %% RobotConnector --> 
