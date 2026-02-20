@@ -24,12 +24,12 @@ def dict_to_node(data: dict) -> Node | None:
     )
 
 
-def dict_to_request(data: dict) -> Request | None:
+def dict_to_request(uuid: UUID, data: dict) -> Request | None:
     """Convert dict from Redis storage to Request object"""
     if not data:
         return None
     return Request(
-        uuid=UUID(data['uuid']),
+        uuid=uuid,
         status=RequestStatus(int(data['status'])),
         pickup_uuid=UUID(data['pickup']),
         delivery_uuid=UUID(data['delivery']),
@@ -37,13 +37,13 @@ def dict_to_request(data: dict) -> Request | None:
     )
 
 
-def dict_to_job(data: dict) -> Job | None:
+def dict_to_job(uuid: UUID, data: dict) -> Job | None:
     """Convert dict from Redis storage to Job object"""
     # Parse target_node if it's a dict, otherwise assume it's already parsed
     if not data:
         return None
     return Job(
-        uuid=UUID(data['uuid']),
+        uuid=uuid,
         operation=JobOperation(int(data['operation'])),
         target_node=dict_to_node(json.loads(data['target_node'])),
         request_uuid=UUID(data['request']) if data.get('request') else None,

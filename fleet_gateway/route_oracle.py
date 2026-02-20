@@ -26,6 +26,9 @@ class RouteOracle:
         data = res.data[0]
         return Node(data["id"], data.get("alias"), data["tag_id"], data["x"], data["y"], data.get("height"), NodeType(data["type"]))
 
+    def getNodeById(self, graph_id: int | None, node_id: int) -> Node:
+        return self.getNodesByIds(graph_id, [node_id])[0]
+
     def getNodesByIds(self, graph_id: int | None, node_ids: list[int]) -> list[Node]:
         if graph_id is None:
             if self.graph_id is None:

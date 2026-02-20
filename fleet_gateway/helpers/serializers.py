@@ -21,7 +21,7 @@ def node_to_dict(node: Node) -> dict:
 def request_to_dict(request: Request) -> dict:
     """Convert Request object to dict for Redis storage"""
     return {
-        'uuid': str(request.uuid),
+        # 'uuid': str(request.uuid),
         'status': request.status.value,
         'pickup': str(request.pickup_uuid),
         'delivery': str(request.delivery_uuid),
@@ -31,10 +31,10 @@ def request_to_dict(request: Request) -> dict:
 def job_to_dict(job: Job) -> dict:
     """Convert Job object to dict for Redis storage"""
     return {
-        'uuid': str(job.uuid),
+        # 'uuid': str(job.uuid),
         'operation': job.operation.value,
         'target_node': json.dumps(node_to_dict(job.target_node)),
-        'request': str(job.request_uuid) if job.request_uuid is not None else None,
+        'request': str(job.request_uuid) if job.request_uuid else "",
         'handling_robot': job.handling_robot_name
     }
 

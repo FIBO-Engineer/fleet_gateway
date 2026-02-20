@@ -9,8 +9,10 @@ from fastapi import FastAPI
 from strawberry.fastapi import GraphQLRouter
 
 from fleet_gateway.fleet_handler import FleetHandler
+from fleet_gateway.order_store import OrderStore
 from fleet_gateway.route_oracle import RouteOracle
-from fleet_gateway.backup.fleet_orchestrator import FleetOrchestrator
+from fleet_gateway.warehouse_controller import WarehouseController
+
 from fleet_gateway.api import schema
 
 # Load environment variables
@@ -51,7 +53,7 @@ async def lifespan(app: FastAPI):
 
     app.state.fleet_handler = FleetHandler(app.state.redis, ROBOTS_CONFIG)
 
-    app.state.warehouse_controller = WarehouseController(app.state.order_store, app.state.fleet_handler)
+    app.state.warehouse_controller = WarehouseController(app.state.fleet_handler, app.state.order_store, app.state.route_oracle)
 
     # Initialize robot handlers from config
     # robot_handlers = [

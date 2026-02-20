@@ -118,23 +118,58 @@ class RobotCell:
     # Private variables
     holding_uuid: strawberry.Private[str | None] = None
 
-# Input types for mutations
+# Helper types
 @strawberry.input
 class RequestInput:
     """Input for a warehouse request (pickup + delivery pair)"""
-    pickup_id: int  # Node ID of the shelf to pick from
-    delivery_id: int  # Node ID of the depot to deliver to
-
+    pickup_node_id: int  # Node ID of the shelf to pick from
+    delivery_node_id: int  # Node ID of the depot to deliver to
 
 @strawberry.input
 class AssignmentInput:
     """Input for a robot assignment"""
     robot_name: str  # Name of the robot
     route_node_ids: list[int]  # List of node IDs to visit in order
-    
+
+# Input types for mutations
+@strawberry.input
+class JobOrderInput:
+    robot_name: str
+    target_node_id: int
+    operation: JobOperation
+
+@strawberry.input
+class RequestOrderInput:
+    robot_name: str
+    request: RequestInput
+
+@strawberry.input
+class WarehouseOrderInput:
+    requests: list[RequestInput]
+    assignments: list[AssignmentInput]
+
+@strawberry.input
+class RobotCellInput:
+    robot_name: str
+    cell_index: int
+
+# Mutation Result Types
 @strawberry.type
-class OrderResult:
+class JobOrderResult:
+    success: bool
+    message: str
+    job: Job | None
+    
+
+@strawberry.type
+class RequestOrderResult:
+    success: bool
+    message: str
+    request: Request | None
+
+@strawberry.type
+class WarehouseOrderResult:
     """Result of submitting requests and assignments"""
     success: bool
-    request: list[Request]
-    # message: str
+    message: str
+    requests: list[Request]

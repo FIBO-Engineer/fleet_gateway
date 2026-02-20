@@ -6,15 +6,15 @@ from fleet_gateway.helpers.serializers import node_to_dict
 
 from roslibpy import ActionClient, Goal, GoalStatus, Ros, Topic
 
-from fleet_gateway.enums import RobotConnectionStatus, RobotActionStatus, NodeType
-from fleet_gateway.api.types import Robot, Job, Node, MobileBaseState, Pose, Tag, PiggybackState
+from fleet_gateway.enums import RobotConnectionStatus, RobotActionStatus
+from fleet_gateway.api.types import Robot, RobotCell, Job, Node, MobileBaseState, Pose, Tag, PiggybackState
 
 class RobotConnector(Ros):
     """
     Robot handler that connect to a robot via ROS WarehouseCommand action
     """
 
-    def __init__(self, name: str, host_ip: str, port: int, route_oracle: RouteOracle) -> None:
+    def __init__(self, name: str, host_ip: str, port: int, route_oracle: RouteOracle):
         super().__init__(host=host_ip, port=port)
         self.run(1.0)
 
@@ -85,8 +85,8 @@ class RobotConnector(Ros):
 
         # Known current location
         start_node: Node = self.route_oracle.getNodeFromTagId(tag_id=self.mobile_base_state.tag.qr_id)
-        path_nodes_id : list[int] = self.route_oracle.getShortestPathById(start_id=start_node.id, end_id=job.target_node.id)
-        path_nodes : list[Node] = self.route_oracle.getNodesByIds(node_ids=path_nodes_id)
+        path_node_ids : list[int] = self.route_oracle.getShortestPathById(start_id=start_node.id, end_id=job.target_node.id)
+        path_nodes : list[Node] = self.route_oracle.getNodesByIds(node_ids=path_node_ids)
         
         goal = Goal({
             'nodes': [ node_to_dict(node) for node in path_nodes ],
@@ -132,3 +132,10 @@ class RobotConnector(Ros):
             mobile_base_state=self.mobile_base_state,
             piggyback_state=self.piggyback_state
         )
+
+class RobotHandler(RobotConnector):
+    def __init__(self, name: str, host_ip: str, port: int, cell_heights: list[float], route_oracle: RouteOracle):
+        super().__init__(name, host_ip, port, route_oracle)
+        self.cells : list[RobotCell] = [RobotCell(height) for height in cell_heights]
+        self.current_job : Job | None = None
+        self.job_queue : list[Job] = []

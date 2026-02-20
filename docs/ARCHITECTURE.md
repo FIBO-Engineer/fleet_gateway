@@ -140,7 +140,7 @@ request:{uuid}:update
 
 ## Request Status States
 
-- **CANCELLED** (0): User cancelled
+- **CANCELLED** (0): User canceled
 - **FAILED** (1): Execution failed
 - **IN_PROGRESS** (2): Currently executing
 - **COMPLETED** (3): Successfully finished
