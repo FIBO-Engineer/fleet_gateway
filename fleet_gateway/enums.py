@@ -26,7 +26,7 @@ class RobotActionStatus(Enum):
     IDLE = 0
     OPERATING = 1  # Robot is working
     ERROR = 2  # Robot encountered an error
-    CANCELLED = 3 # Robot operation was cancelled
+    CANCELED = 3 # Robot operation was canceled
 
 class JobOperation(Enum):
     """Warehouse operation types for jobs"""
@@ -37,7 +37,7 @@ class JobOperation(Enum):
 
 class RequestStatus(Enum):
     """Status of warehouse requests (pickup + delivery pairs)"""
-    CANCELLED = 0
-    FAILED = 1
-    IN_PROGRESS = 2
-    COMPLETED = 3
+    COMPLETED = 0
+    IN_PROGRESS = 1
+    FAILED = 2
+    CANCELED = 3

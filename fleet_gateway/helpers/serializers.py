@@ -11,6 +11,7 @@ def node_to_dict(node: Node) -> dict:
     return {
         'id': node.id,
         'alias': node.alias,
+        'tag_id': node.tag_id,
         'x': node.x,
         'y': node.y,
         'height': node.height,

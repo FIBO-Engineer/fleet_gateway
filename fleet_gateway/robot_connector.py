@@ -4,7 +4,7 @@ from datetime import datetime, timezone, timedelta
 from fleet_gateway.route_oracle import RouteOracle
 from fleet_gateway.helpers.serializers import node_to_dict
 
-from roslibpy import ActionClient, Goal, Ros, Message, Topic
+from roslibpy import ActionClient, Goal, GoalStatus, Ros, Topic
 
 from fleet_gateway.enums import RobotConnectionStatus, RobotActionStatus, NodeType
 from fleet_gateway.api.types import Robot, Job, Node, MobileBaseState, Pose, Tag, PiggybackState
@@ -18,9 +18,6 @@ class RobotConnector(Ros):
         super().__init__(host=host_ip, port=port)
         self.run(1.0)
 
-        # Infrastructure (RobotHandler-specific)
-        self.ros_action_goal: Goal | None = None
-
         # Robot state (all operational state in one place)
         self.name = name
         self.action_status = RobotActionStatus.IDLE
@@ -29,6 +26,7 @@ class RobotConnector(Ros):
 
         # Setup the action client
         self.warehouse_cmd_action_client = ActionClient(self, '/warehouse_command', 'warehouse_server/WarehouseCommandAction')
+        self.action_future = None
         
         # Setup Mobile Base State Subscribers
         self.odom_topic = Topic(self, '/odom_qr', 'nav_msgs/Odometry')
@@ -78,7 +76,7 @@ class RobotConnector(Ros):
             except ValueError:
                 pass
 
-    def send_job(self, job: Job) -> bool:
+    def send_job(self, job: Job) -> asyncio.Future[GoalStatus]:
         """Send job to robot via ROS action. Use docs/ros_messages/WarehouseCommand.action"""
         """The Job resolve to target node here"""
 
@@ -89,59 +87,48 @@ class RobotConnector(Ros):
         start_node: Node = self.route_oracle.getNodeFromTagId(tag_id=self.mobile_base_state.tag.qr_id)
         path_nodes_id : list[int] = self.route_oracle.getShortestPathById(start_id=start_node.id, end_id=job.target_node.id)
         path_nodes : list[Node] = self.route_oracle.getNodesByIds(node_ids=path_nodes_id)
-        # TODO: Continue checking here
-        goal_msg = Message({
+        
+        goal = Goal({
             'nodes': [ node_to_dict(node) for node in path_nodes ],
             'operation': job.operation.value,
             'robot_cell': job.robot_cell
         })
 
-        # Create goal
-        goal = Goal(self.warehouse_cmd_action_client, goal_msg)
-        self.ros_action_goal = goal
-
-        # Set robot status to BUSY
-        self.action_status = RobotActionStatus.BUSY
-
         # Send goal with callbacks
         def on_result(result):
             """Handle job completion result"""
-            # Update cell holdings based on operation
-            from fleet_gateway.enums import JobOperation
-            if self.state.current_job.robot_cell >= 0:
-                if self.state.current_job.operation == JobOperation.PICKUP:
-                    self.allocate_cell(self.state.current_job.robot_cell, self.state.current_job.request_uuid)
-                elif self.state.current_job.operation == JobOperation.DELIVERY:
-                    self.release_cell(self.state.current_job.robot_cell)
-
-            # Clear current job
-            self.state.current_job = None
-            self.ros_action_goal = None
-
-            # Set robot status to IDLE
-            self.state.status = RobotStatus.IDLE
+            match result["status"]:
+                case GoalStatus.SUCCEEDED:
+                    self.action_status = RobotActionStatus.IDLE
+                case GoalStatus.CANCELED:
+                    self.action_status = RobotActionStatus.CANCELED
+                case GoalStatus.ABORTED:
+                    self.action_status = RobotActionStatus.ERROR
+                case _:
+                    raise RuntimeError("Unexpected case on_result")
+            self.action_future.set_result(result)
 
         def on_feedback(feedback):
             """Handle job feedback"""
-            # Update last seen node
-            if 'estimated_tag_id' in feedback:
-                self.state.mobile_base_state.estimated_tag.id = feedback['estimated_tag_id']
+            pass
 
         def on_error(error):
             """Handle job error"""
-            self.state.current_job = None
-            self.ros_action_goal = None
-            self.state.status = RobotStatus.ERROR
+            self.action_future.set_exception(error)
 
-        goal.send(on_result=on_result, on_feedback=on_feedback, on_error=on_error)
-        return True
+        self.warehouse_cmd_action_client.send_goal(goal, on_result, on_feedback, on_error)
+        self.action_status = RobotActionStatus.OPERATING
+
+        self.action_future = asyncio.Future[GoalStatus] = asyncio.get_running_loop().create_future()
+
+        return self.action_future
     
     def toRobot(self):
         """Convert RobotConnector state to Robot object"""
         return Robot(
             name=self.name,
             connection_status=RobotConnectionStatus(self.is_connected),
-            action_status=,
+            action_status=self.action_status,
             mobile_base_state=self.mobile_base_state,
             piggyback_state=self.piggyback_state
         )

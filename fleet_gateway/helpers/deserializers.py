@@ -16,6 +16,7 @@ def dict_to_node(data: dict) -> Node | None:
     return Node(
         id=int(data['id']),
         alias=data['alias'],
+        tag_id=data['tag_id'],
         x=float(data['x']),
         y=float(data['y']),
         height=float(data['height']),
