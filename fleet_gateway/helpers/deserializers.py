@@ -44,6 +44,7 @@ def dict_to_job(uuid: UUID, data: dict) -> Job | None:
         return None
     return Job(
         uuid=uuid,
+        status=OrderStatus(int(data['status'])),
         operation=JobOperation(int(data['operation'])),
         target_node=dict_to_node(json.loads(data['target_node'])),
         request_uuid=UUID(data['request']) if data.get('request') else None,

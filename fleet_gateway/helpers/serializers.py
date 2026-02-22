@@ -32,6 +32,7 @@ def job_to_dict(job: Job) -> dict:
     """Convert Job object to dict for Redis storage"""
     return {
         # 'uuid': str(job.uuid),
+        'status': job.status.value,
         'operation': job.operation.value,
         'target_node': json.dumps(node_to_dict(job.target_node)),
         'request': str(job.request_uuid) if job.request_uuid else "",

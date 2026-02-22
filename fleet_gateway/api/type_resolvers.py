@@ -15,18 +15,18 @@ from fleet_gateway.fleet_handler import FleetHandler
 async def get_request_status(request: Request, info: strawberry.types.Info) -> OrderStatus:
     """Resolve request from pickup and delivery job status from Request."""
     order_store: OrderStore = info.context["order_store"]
-    return order_store.get_request_status(request)
+    return await order_store.get_request_status(request)
 
 async def get_pickup_job_by_request(request: Request, info: strawberry.types.Info) -> Job:
     """Resolve pickup Job from Request."""
     order_store: OrderStore = info.context["order_store"]
-    return order_store.get_job(request.pickup_uuid)
+    return await order_store.get_job(request.pickup_uuid)
 
 
 async def get_delievery_job_by_request(request: Request, info: strawberry.types.Info) -> Job:
     """Resolve delivery Job from Request."""
     order_store: OrderStore = info.context["order_store"]
-    return order_store.get_job(request.delivery_uuid)
+    return await order_store.get_job(request.delivery_uuid)
 
 
 async def get_handling_robot_by_request(request: Request, info: strawberry.types.Info) -> Robot | None:
@@ -41,7 +41,7 @@ async def get_request_by_job(job: Job, info: strawberry.types.Info) -> Request |
     if job.request_uuid is None:
         return None
     order_store: OrderStore = info.context["order_store"]
-    return order_store.get_request(job.request_uuid)
+    return await order_store.get_request(job.request_uuid)
 
 
 async def get_handling_robot_by_job(job: Job, info: strawberry.types.Info) -> Robot:
@@ -73,4 +73,4 @@ async def get_holding_by_robot_cell(robot_cell: RobotCell, info: strawberry.type
     if robot_cell.holding_uuid is None:
         return None
     order_store: OrderStore = info.context["order_store"]
-    return order_store.get_request(robot_cell.holding_uuid)
+    return await order_store.get_request(robot_cell.holding_uuid)
