@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from fleet_gateway.api.types import Request
 from fleet_gateway.helpers.serializers import request_to_dict
-from fleet_gateway.enums import RequestStatus
+from fleet_gateway.enums import OrderStatus
 
 if TYPE_CHECKING:
     from fleet_gateway.job_store import JobStore
@@ -95,7 +95,7 @@ class RequestStore():
             pickup=pickup_job,
             delivery=delivery_job,
             handling_robot=None,  # Resolved separately via robot name lookup
-            status=RequestStatus(int(request_dict['request_status']))
+            status=OrderStatus(int(request_dict['request_status']))
         )
 
     async def update_request_status(self, request_uuid: str | UUID, status) -> bool:

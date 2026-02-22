@@ -9,12 +9,12 @@ robot handler internals.
 import redis.asyncio as redis
 from uuid import uuid4, UUID
 
-from fleet_gateway.robot_connector import RobotConnector
+from fleet_gateway.robot import RobotConnector
 from fleet_gateway.route_oracle import RouteOracle
 from fleet_gateway.job_store import JobStore
 from fleet_gateway.request_store import RequestStore
 from fleet_gateway.api.types import Job, Robot, Request, RequestInput, AssignmentInput
-from fleet_gateway.enums import RobotStatus, JobOperation, RequestStatus
+from fleet_gateway.enums import RobotStatus, JobOperation, OrderStatus
 
 
 class FleetOrchestrator:
@@ -207,7 +207,7 @@ class FleetOrchestrator:
                 pickup=pickup_job,
                 delivery=delivery_job,
                 handling_robot=robot.state,  # Robot state object, not RobotHandler
-                status=RequestStatus.IN_PROGRESS
+                status=OrderStatus.IN_PROGRESS
             )
             requests.append(request)
 

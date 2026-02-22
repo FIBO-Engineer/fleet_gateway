@@ -49,33 +49,16 @@ async def lifespan(app: FastAPI):
     )
     await app.state.redis.ping()
 
+    app.state.async_queue = asyncio.Queue()
+
     app.state.order_store = OrderStore(app.state.redis)
 
-    app.state.fleet_handler = FleetHandler(app.state.redis, ROBOTS_CONFIG)
+    app.state.fleet_handler = FleetHandler(app.state.async_queue, app.state.route_oracle, ROBOTS_CONFIG)
 
-    app.state.warehouse_controller = WarehouseController(app.state.fleet_handler, app.state.order_store, app.state.route_oracle)
-
-    # Initialize robot handlers from config
-    # robot_handlers = [
-    #     RobotHandler(
-    #         name=robot_name,
-    #         host_ip=config['host'],
-    #         port=config['port'],
-    #         cell_heights=config['cell_heights'],
-    #         redis_client=app.state.redis
-    #     )
-    #     for robot_name, config in ROBOTS_CONFIG.items()
-    # ]
-
-    # Initialize robot states in Redis
-    # for robot_handler in robot_handlers:
-    #     await robot_handler.initialize_in_redis()
-
-    # Create fleet orchestrator (central coordinator)
-    # app.state.fleet = FleetOrchestrator(robot_handlers, app.state.redis, app.state.route_oracle)
+    app.state.warehouse_controller = WarehouseController(app.state.async_queue, app.state.fleet_handler, app.state.order_store, app.state.route_oracle)
 
     stop_event = asyncio.Event()
-    # auto_connector = asyncio.create_task(handler_connect_loop(app.state.fleet, stop_event))
+
     try:
         yield
     finally:

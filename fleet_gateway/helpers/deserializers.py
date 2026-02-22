@@ -7,7 +7,7 @@ Converts Redis hash format back to Job and Request objects.
 import json
 from uuid import UUID
 
-from fleet_gateway.enums import NodeType, JobOperation, RequestStatus
+from fleet_gateway.enums import NodeType, JobOperation, OrderStatus
 from fleet_gateway.api.types import Node, Request, Job
 
 
@@ -30,7 +30,7 @@ def dict_to_request(uuid: UUID, data: dict) -> Request | None:
         return None
     return Request(
         uuid=uuid,
-        status=RequestStatus(int(data['status'])),
+        status=OrderStatus(int(data['status'])),
         pickup_uuid=UUID(data['pickup']),
         delivery_uuid=UUID(data['delivery']),
         handling_robot_name=data['handling_robot']

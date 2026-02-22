@@ -6,10 +6,12 @@ The dataclasses are used internally, while these are exposed via GraphQL.
 """
 
 import strawberry
+import asyncio
 from uuid import UUID
 from typing import TYPE_CHECKING
 from fleet_gateway import request_store
 from datetime import datetime
+
 
 from fleet_gateway import enums
 import fleet_gateway.api.type_resolvers as resolvers
@@ -17,12 +19,12 @@ import fleet_gateway.api.type_resolvers as resolvers
 # For type checking, use the plain enums
 # At runtime, use the Strawberry-wrapped versions
 if TYPE_CHECKING:
-    from fleet_gateway.enums import NodeType, RobotConnectionStatus, RobotActionStatus, JobOperation, RequestStatus
+    from fleet_gateway.enums import NodeType, RobotConnectionStatus, RobotActionStatus, JobOperation, OrderStatus
 else:
     NodeType = strawberry.enum(enums.NodeType)
     RobotStatus = strawberry.enum(enums.RobotStatus)
     JobOperation = strawberry.enum(enums.JobOperation)
-    RequestStatus = strawberry.enum(enums.RequestStatus)
+    OrderStatus = strawberry.enum(enums.OrderStatus)
 
 # Note: In redis, it'll store ID for fast query
 
@@ -41,7 +43,7 @@ class Node:
 class Request:
     """Warehouse request (pickup + delivery pair)"""
     uuid: UUID
-    status: RequestStatus
+    status: OrderStatus = strawberry.field(resolver=resolvers.get_request_status)
     pickup: Job = strawberry.field(resolver=resolvers.get_pickup_job_by_request)
     delivery: Job = strawberry.field(resolver=resolvers.get_delievery_job_by_request)
     handling_robot: Robot = strawberry.field(resolver=resolvers.get_handling_robot_by_request)
@@ -55,6 +57,7 @@ class Job:
     """Robot job with operation type and path nodes"""
     """Path resolved at job time"""
     uuid: UUID
+    status: OrderStatus
     operation: JobOperation
     target_node: Node
     request: Request | None = strawberry.field(resolver=resolvers.get_request_by_job)
@@ -62,7 +65,6 @@ class Job:
     # Private variables
     request_uuid: strawberry.Private[UUID | None]
     handling_robot_name: strawberry.Private[str]
-
 
 @strawberry.type
 class Tag:
@@ -97,7 +99,7 @@ class Robot:
     """Robot state and configuration"""
     name: str
     connection_status: RobotConnectionStatus
-    action_status: RobotActionStatus
+    last_action_status: RobotActionStatus
     mobile_base_state: MobileBaseState | None
     piggyback_state: PiggybackState | None
 

@@ -6,13 +6,16 @@ Contains field resolvers called from types.py to resolve nested GraphQL fields.
 
 import strawberry
 
-from fleet_gateway.api.types import Job, Robot, Request, OrderResult, Node, RobotCell
-from order_store import OrderStore, JobStore
+from fleet_gateway.api.types import Job, Robot, Request, OrderStatus, RobotCell
+from order_store import OrderStore
 from fleet_handler import FleetHandler
-from typing import cast
 
 
 # Field resolvers for Request type (called from types.py)
+async def get_request_status(request: Request, info: strawberry.types.Info) -> OrderStatus:
+    """Resolve request from pickup and delivery job status from Request."""
+    order_store: OrderStore = info.context["order_store"]
+    return order_store.get_request_status(request)
 
 async def get_pickup_job_by_request(request: Request, info: strawberry.types.Info) -> Job:
     """Resolve pickup Job from Request."""

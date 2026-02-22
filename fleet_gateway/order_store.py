@@ -7,7 +7,7 @@ Handles all request CRUD operations, persistence to Redis, and request lifecycle
 import redis.asyncio as redis
 from uuid import UUID
 
-from fleet_gateway.api.types import Request, Job
+from fleet_gateway.api.types import Request, OrderStatus, Job
 from fleet_gateway.helpers.serializers import request_to_dict, job_to_dict
 from fleet_gateway.helpers.deserializers import dict_to_request, dict_to_job
 
@@ -18,6 +18,33 @@ class OrderStore():
     
     async def set_request(self, request: Request) -> bool:
         return await self.redis.hset(f"request:{str(request.uuid)}", mapping=request_to_dict(request)) > 0
+    
+    async def get_request_status(self, request: Request) -> OrderStatus:
+        pickup_job: Job = await self.get_job(request.pickup_uuid)
+        delivery_job: Job = await self.get_job(request.delivery_uuid)
+        if pickup_job is None or delivery_job is None:
+            raise "pickup_job or delivery_job not existed"
+        
+        pickup_status = pickup_job.status
+        delivery_status = delivery_job.status
+
+        # 1. Terminal failure states take highest priority
+        if pickup_status == OrderStatus.FAILED or delivery_status == OrderStatus.FAILED:
+            return OrderStatus.FAILED
+
+        if pickup_status == OrderStatus.CANCELED or delivery_status == OrderStatus.CANCELED:
+            return OrderStatus.CANCELED
+
+        # 2. If both completed -> request completed
+        if pickup_status == OrderStatus.COMPLETED and delivery_status == OrderStatus.COMPLETED:
+            return OrderStatus.COMPLETED
+
+        # 3. If either is currently running -> request in progress
+        if pickup_status == OrderStatus.IN_PROGRESS or delivery_status == OrderStatus.IN_PROGRESS:
+            return OrderStatus.IN_PROGRESS
+
+        # 4. Otherwise still waiting
+        return OrderStatus.QUEUING
 
     async def get_request(self, uuid: UUID) -> Request | None:
         return dict_to_request(uuid, await self.redis.hgetall(f"request:{str(uuid)}"))

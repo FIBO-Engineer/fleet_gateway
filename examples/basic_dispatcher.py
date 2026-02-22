@@ -11,10 +11,10 @@ import asyncio
 import json
 from uuid import UUID, uuid4
 import redis.asyncio as redis
-from fleet_gateway.robot_connector import RobotConnector
+from fleet_gateway.robot import RobotConnector
 from fleet_gateway.job_store import JobStore
 from fleet_gateway.api.types import Job, Node
-from fleet_gateway.enums import JobOperation, RequestStatus, NodeType
+from fleet_gateway.enums import JobOperation, OrderStatus, NodeType
 
 
 async def create_request_in_redis(
@@ -52,7 +52,7 @@ async def create_request_in_redis(
         'pickup': json.dumps(pickup_job),
         'delivery': json.dumps(delivery_job),
         'handler': handler_name,
-        'request_status': str(RequestStatus.IN_PROGRESS.value)
+        'request_status': str(OrderStatus.IN_PROGRESS.value)
     }
 
     await r.hset(f"request:{request_uuid}", mapping=request_data)
@@ -159,7 +159,7 @@ async def send_pickup_delivery_request(
     except RuntimeError as e:
         print(f"Failed to send job: {e}")
         # Update request status to FAILED
-        await r.hset(f"request:{request_uuid}", 'request_status', str(RequestStatus.FAILED.value))
+        await r.hset(f"request:{request_uuid}", 'request_status', str(OrderStatus.FAILED.value))
         await r.publish(f"request:{request_uuid}:update", "updated")
 
 

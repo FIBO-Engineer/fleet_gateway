@@ -8,7 +8,7 @@ back into typed Python objects for GraphQL responses.
 import json
 from uuid import UUID
 
-from fleet_gateway.enums import NodeType, RobotStatus, JobOperation, RequestStatus
+from fleet_gateway.enums import NodeType, RobotStatus, JobOperation, OrderStatus
 from ..api.types import Node, MobileBaseState, PiggybackState, Job, Robot, Request
 
 
@@ -91,7 +91,7 @@ def deserialize_request(data: dict, robot_lookup: dict[str, Robot]) -> Request:
         pickup=deserialize_job(json.loads(data['pickup'])),
         delivery=deserialize_job(json.loads(data['delivery'])),
         handling_robot=robot_lookup.get(data['handler']),
-        status=RequestStatus(int(data['request_status']))
+        status=OrderStatus(int(data['request_status']))
     )
 
 

@@ -82,22 +82,22 @@ class Mutation:
     @strawberry.mutation
     async def cancel_job(self, info: strawberry.types.Info, uuid: UUID) -> Job | None:
         warehouse_controller: WarehouseController = info.context["warehouse_controller"]
-        return await warehouse_controller.reject_job_order(uuid)
+        return await warehouse_controller.cancel_job_order(uuid)
     
     @strawberry.mutation
     async def cancel_jobs(self, info: strawberry.types.Info, uuids: list[UUID]) -> list[Job]:
         warehouse_controller: WarehouseController = info.context["warehouse_controller"]
-        return await warehouse_controller.reject_job_orders(uuids)
+        return await warehouse_controller.cancel_job_orders(uuids)
     
     @strawberry.mutation
     async def cancel_request(self, info: strawberry.types.Info, uuid: UUID) -> Request | None:
         warehouse_controller: WarehouseController = info.context["warehouse_controller"]
-        return await warehouse_controller.reject_request_order(uuid)
+        return await warehouse_controller.cancel_request_order(uuid)
 
     @strawberry.mutation
     async def cancel_requests(self, info: strawberry.types.Info, uuids: list[UUID]) -> list[Request]:
         warehouse_controller: WarehouseController = info.context["warehouse_controller"]
-        return await warehouse_controller.reject_request_orders(uuids)
+        return await warehouse_controller.cancel_request_orders(uuids)
     
     @strawberry.mutation
     async def free_robot_cell(self, info: strawberry.types.Info, robot_cell: RobotCellInput) -> Request | None:
