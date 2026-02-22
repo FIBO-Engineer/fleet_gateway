@@ -27,7 +27,7 @@ class RouteOracle:
         return Node(data["id"], data.get("alias"), data["tag_id"], data["x"], data["y"], data.get("height"), NodeType(data["type"]))
 
     def getNodeById(self, graph_id: int | None, node_id: int) -> Node | None:
-        return node[0] if (node := self.getNodesByIds(graph_id, [node_id])) is not [] else None
+        return node[0] if (node := self.getNodesByIds(graph_id, [node_id])) else None
 
     def getNodesByIds(self, graph_id: int | None, node_ids: list[int]) -> list[Node]:
         if graph_id is None:
@@ -43,6 +43,7 @@ class RouteOracle:
             n = Node(
                 id=row["id"],
                 alias=row.get("alias"),
+                tag_id=row.get("tag_id"),
                 x=row["x"],
                 y=row["y"],
                 height=row.get("height"),
@@ -80,7 +81,7 @@ class RouteOracle:
 def main():
     url: str = os.environ.get("SUPABASE_URL")
     key: str = os.environ.get("SUPABASE_KEY")
-    ro = RouteOracle(url, key)
+    ro = RouteOracle(url, key, None)
     path = ro.getShortestPathByAlias(2, start_alias="W3", end_alias="W8")
     nodes = ro.getNodesByIds(2, path)
     print(nodes)

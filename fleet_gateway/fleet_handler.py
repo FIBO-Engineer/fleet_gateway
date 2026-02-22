@@ -14,20 +14,30 @@ class FleetHandler():
         }
 
     def assign_job(self, robot_name: str, job: Job):
+        if robot_name not in self.handlers:
+            return
         self.handlers[robot_name].assign(job)
 
     # API for query
     def get_robot(self, name: str) -> Robot | None:
+        if name not in self.handlers:
+            return None
         return self.handlers[name].to_robot()
 
     def get_robots(self) -> list[Robot]:
         return [handler.to_robot() for handler in self.handlers.values()]
 
     def get_robot_cells(self, name: str) -> list[RobotCell]:
+        if name not in self.handlers:
+            return []
         return self.handlers[name].cells
 
     def get_current_job(self, name: str) -> Job | None:
+        if name not in self.handlers:
+            return None
         return self.handlers[name].current_job
 
     def get_job_queue(self, name: str) -> list[Job]:
+        if name not in self.handlers:
+            return []
         return self.handlers[name].job_queue

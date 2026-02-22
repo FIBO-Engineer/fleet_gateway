@@ -1,3 +1,10 @@
+# NOTE: Potential thread-safety risk — shared state (current_job, last_action_status, job_queue)
+# is mutated from both the asyncio event loop thread (assign, clear_error) and the roslibpy
+# Twisted reactor thread (on_result, on_error callbacks). The put_nowait calls are guarded via
+# call_soon_threadsafe, but the other state mutations are not. A full fix requires either
+# threading.RLock around all state mutations or restructuring callbacks to dispatch back onto
+# the asyncio thread via loop.call_soon_threadsafe before touching shared state.
+
 import asyncio
 import math
 from datetime import datetime, timezone, timedelta
@@ -78,7 +85,7 @@ class RobotConnector(Ros):
         """Send job to robot via ROS action. Use docs/ros_messages/WarehouseCommand.action"""
         """The Job resolve to target node here"""
 
-        if self.mobile_base_state is None or self.mobile_base_state.tag is None:
+        if self.mobile_base_state.tag is None:
             raise RuntimeError("Unable to route its location to the destination due to unknown current location")
 
         # Known current location
@@ -153,7 +160,7 @@ class RobotHandler(RobotConnector):
         self.current_job : Job | None = None
         self.job_queue : list[Job] = []
         self.job_updater = job_updater
-        self.loop = asyncio.get_event_loop()
+        self.loop = asyncio.get_running_loop()
     
     def assign(self, job: Job):
         self.job_queue.append(job)

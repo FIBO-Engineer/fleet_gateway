@@ -7,8 +7,8 @@ Contains field resolvers called from types.py to resolve nested GraphQL fields.
 import strawberry
 
 from fleet_gateway.api.types import Job, Robot, Request, OrderStatus, RobotCell
-from order_store import OrderStore
-from fleet_handler import FleetHandler
+from fleet_gateway.order_store import OrderStore
+from fleet_gateway.fleet_handler import FleetHandler
 
 
 # Field resolvers for Request type (called from types.py)
@@ -31,21 +31,23 @@ async def get_delievery_job_by_request(request: Request, info: strawberry.types.
 
 async def get_handling_robot_by_request(request: Request, info: strawberry.types.Info) -> Robot | None:
     """Resolve handling Robot from Request."""
-    fleet_handler: FleetHandler = info.context["order_store"]
+    fleet_handler: FleetHandler = info.context["fleet_handler"]
     return fleet_handler.get_robot(request.handling_robot_name)
 
 # Field resolvers for Job type (called from types.py)
 
 async def get_request_by_job(job: Job, info: strawberry.types.Info) -> Request | None:
     """Resolve Request from Job."""
+    if job.request_uuid is None:
+        return None
     order_store: OrderStore = info.context["order_store"]
     return order_store.get_request(job.request_uuid)
 
 
 async def get_handling_robot_by_job(job: Job, info: strawberry.types.Info) -> Robot:
     """Resolve handling Robot from Job."""
-    order_store: OrderStore = info.context["order_store"]
-    return order_store.get_robot(job.handling_robot_name)
+    fleet_handler: FleetHandler = info.context["fleet_handler"]
+    return fleet_handler.get_robot(job.handling_robot_name)
 
 
 # Field resolvers for Robot type (called from types.py)
@@ -68,5 +70,7 @@ async def get_job_queue_by_robot(robot: Robot, info: strawberry.types.Info) -> l
 # Field resolvers for RobotCell type (called from types.py)
 async def get_holding_by_robot_cell(robot_cell: RobotCell, info: strawberry.types.Info) -> Request | None:
     """Resolve holding Request from RobotCell."""
+    if robot_cell.holding_uuid is None:
+        return None
     order_store: OrderStore = info.context["order_store"]
     return order_store.get_request(robot_cell.holding_uuid)

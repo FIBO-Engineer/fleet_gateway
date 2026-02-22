@@ -6,25 +6,17 @@ The dataclasses are used internally, while these are exposed via GraphQL.
 """
 
 import strawberry
-import asyncio
 from uuid import UUID
-from typing import TYPE_CHECKING
-from fleet_gateway import request_store
 from datetime import datetime
-
 
 from fleet_gateway import enums
 import fleet_gateway.api.type_resolvers as resolvers
 
-# For type checking, use the plain enums
-# At runtime, use the Strawberry-wrapped versions
-if TYPE_CHECKING:
-    from fleet_gateway.enums import NodeType, RobotConnectionStatus, RobotActionStatus, JobOperation, OrderStatus
-else:
-    NodeType = strawberry.enum(enums.NodeType)
-    RobotStatus = strawberry.enum(enums.RobotStatus)
-    JobOperation = strawberry.enum(enums.JobOperation)
-    OrderStatus = strawberry.enum(enums.OrderStatus)
+NodeType = strawberry.enum(enums.NodeType)
+RobotConnectionStatus = strawberry.enum(enums.RobotConnectionStatus)
+RobotActionStatus = strawberry.enum(enums.RobotActionStatus)
+JobOperation = strawberry.enum(enums.JobOperation)
+OrderStatus = strawberry.enum(enums.OrderStatus)
 
 # Note: In redis, it'll store ID for fast query
 

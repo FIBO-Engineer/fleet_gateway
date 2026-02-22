@@ -23,7 +23,7 @@ class OrderStore():
         pickup_job: Job = await self.get_job(request.pickup_uuid)
         delivery_job: Job = await self.get_job(request.delivery_uuid)
         if pickup_job is None or delivery_job is None:
-            raise "pickup_job or delivery_job not existed"
+            raise RuntimeError("pickup_job or delivery_job not existed")
         
         pickup_status = pickup_job.status
         delivery_status = delivery_job.status
