@@ -10,6 +10,6 @@ This package contains:
 - schema.py: Combined Strawberry schema
 """
 
-from .schema import schema
+# from .schema import schema
 
-__all__ = ["schema"]
+# __all__ = ["schema"]

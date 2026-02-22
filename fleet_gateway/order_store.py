@@ -3,13 +3,18 @@ Order Store - Centralized Job & Request management and persistence.
 
 Handles all request CRUD operations, persistence to Redis, and request lifecycle management.
 """
+from __future__ import annotations
+from typing import TYPE_CHECKING
 
 import redis.asyncio as redis
 from uuid import UUID
 
-from fleet_gateway.api.types import Request, OrderStatus, Job
+from fleet_gateway.enums import OrderStatus
 from fleet_gateway.helpers.serializers import request_to_dict, job_to_dict
 from fleet_gateway.helpers.deserializers import dict_to_request, dict_to_job
+
+if TYPE_CHECKING:
+    from fleet_gateway.api.types import Request, Job
 
 class OrderStore():
     def __init__(self, redis_client: redis.Redis):

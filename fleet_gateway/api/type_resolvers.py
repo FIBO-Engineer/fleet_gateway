@@ -3,13 +3,18 @@ GraphQL field resolvers for Fleet Gateway types.
 
 Contains field resolvers called from types.py to resolve nested GraphQL fields.
 """
+from __future__ import annotations
 
 import strawberry
+from typing import TYPE_CHECKING
 
-from fleet_gateway.api.types import Job, Robot, Request, OrderStatus, RobotCell
 from fleet_gateway.order_store import OrderStore
 from fleet_gateway.fleet_handler import FleetHandler
 
+from fleet_gateway.enums import OrderStatus
+
+if TYPE_CHECKING:
+    from fleet_gateway.api.types import Job, Robot, Request, RobotCell
 
 # Field resolvers for Request type (called from types.py)
 async def get_request_status(request: Request, info: strawberry.types.Info) -> OrderStatus:

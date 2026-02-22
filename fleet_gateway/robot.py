@@ -4,6 +4,8 @@
 # call_soon_threadsafe, but the other state mutations are not. A full fix requires either
 # threading.RLock around all state mutations or restructuring callbacks to dispatch back onto
 # the asyncio thread via loop.call_soon_threadsafe before touching shared state.
+from __future__ import annotations
+from typing import TYPE_CHECKING
 
 import asyncio
 import math
@@ -14,8 +16,10 @@ from fleet_gateway.helpers.serializers import node_to_dict
 
 from roslibpy import ActionClient, Goal, GoalStatus, Ros, Topic
 
-from fleet_gateway.enums import RobotConnectionStatus, RobotActionStatus
-from fleet_gateway.api.types import Robot, RobotCell, Job, OrderStatus, Node, MobileBaseState, Pose, Tag, PiggybackState
+from fleet_gateway.enums import OrderStatus, RobotConnectionStatus, RobotActionStatus
+
+if TYPE_CHECKING:
+    from fleet_gateway.api.types import Robot, RobotCell, Job, Node, MobileBaseState, Pose, Tag, PiggybackState
 
 class RobotConnector(Ros):
     """

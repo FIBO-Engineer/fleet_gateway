@@ -1,18 +1,22 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 import asyncio
-from fleet_gateway.api.types import (
-    JobOperation,
-    OrderStatus,
-    Node,
-    Job,
-    Request,
-    JobOrderInput,
-    RequestOrderInput,
-    WarehouseOrderInput,
-    JobOrderResult,
-    RequestOrderResult,
-    WarehouseOrderResult,
-)
+
+from fleet_gateway.enums import JobOperation, OrderStatus
+
+if TYPE_CHECKING:
+    from fleet_gateway.api.types import (
+        Node,
+        Job,
+        Request,
+        JobOrderInput,
+        RequestOrderInput,
+        WarehouseOrderInput,
+        JobOrderResult,
+        RequestOrderResult,
+        WarehouseOrderResult,
+    )
 
 from fleet_gateway.fleet_handler import FleetHandler
 from fleet_gateway.order_store import OrderStore

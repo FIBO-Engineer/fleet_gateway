@@ -1,8 +1,14 @@
-from fleet_gateway.api.types import Robot, RobotCell, Job
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+import asyncio
+
 from fleet_gateway.robot import RobotHandler
 from fleet_gateway.route_oracle import RouteOracle
 
-import asyncio
+if TYPE_CHECKING:
+    from fleet_gateway.api.types import Robot, RobotCell, Job
+
 
 class FleetHandler():
     """Work as a robot grouper"""

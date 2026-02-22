@@ -1,8 +1,15 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
 import os
 from supabase import create_client, Client
 
-from fleet_gateway.api.types import Node
 from fleet_gateway.enums import NodeType
+
+if TYPE_CHECKING:
+    from fleet_gateway.api.types import Node
+
+
 
 
 class RouteOracle:

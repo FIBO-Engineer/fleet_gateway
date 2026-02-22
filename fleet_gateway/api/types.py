@@ -4,7 +4,7 @@ GraphQL type definitions for Fleet Gateway API.
 These @strawberry.type classes mirror the dataclasses in models.py.
 The dataclasses are used internally, while these are exposed via GraphQL.
 """
-
+from __future__ import annotations
 import strawberry
 from uuid import UUID
 from datetime import datetime
@@ -97,7 +97,7 @@ class Robot:
 
     # Cell allocations: request UUID per cell (None = empty cell)
     cells: list[RobotCell] = strawberry.field(resolver=resolvers.get_robot_cells_by_robot)
-    current_job: Job | None = strawberry.field(resolver=resolvers.get_current_job_by_robot, default=None)
+    current_job: Job | None = strawberry.field(resolver=resolvers.get_current_job_by_robot)
     job_queue: list[Job] = strawberry.field(resolver=resolvers.get_job_queue_by_robot)
     # Private variables
     current_job_uuid: strawberry.Private[UUID | None] = None
@@ -108,9 +108,9 @@ class Robot:
 class RobotCell:
     """Robot cell storage with height and holding capacity"""
     height: float
-    holding: Job | None = strawberry.field(resolver=resolvers.get_holding_by_robot_cell, default=None)
+    holding: Job | None = strawberry.field(resolver=resolvers.get_holding_by_robot_cell)
     # Private variables
-    holding_uuid: strawberry.Private[UUID | None] = None
+    holding_uuid: strawberry.Private[UUID | None]
 
 # Helper types
 @strawberry.input

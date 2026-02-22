@@ -3,12 +3,16 @@ Job and Request deserialization helpers for Redis persistence.
 
 Converts Redis hash format back to Job and Request objects.
 """
+from __future__ import annotations
+from typing import TYPE_CHECKING
 
 import json
 from uuid import UUID
 
 from fleet_gateway.enums import NodeType, JobOperation, OrderStatus
-from fleet_gateway.api.types import Node, Request, Job
+
+if TYPE_CHECKING:
+    from fleet_gateway.api.types import Node, Request, Job
 
 
 def dict_to_node(data: dict) -> Node | None:

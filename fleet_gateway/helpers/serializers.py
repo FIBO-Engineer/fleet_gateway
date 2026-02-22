@@ -3,8 +3,12 @@ Job and Request serialization helpers for Redis persistence.
 
 Converts Job and Request objects to/from Redis hash format.
 """
+from __future__ import annotations
+from typing import TYPE_CHECKING
 import json
-from fleet_gateway.api.types import Node, Request, Job
+
+if TYPE_CHECKING:
+    from fleet_gateway.api.types import Node, Request, Job
 
 def node_to_dict(node: Node) -> dict:
     """Convert Node object to dict"""
