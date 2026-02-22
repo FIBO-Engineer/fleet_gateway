@@ -1,4 +1,5 @@
 import asyncio
+import math
 from datetime import datetime, timezone, timedelta
 
 from fleet_gateway.route_oracle import RouteOracle
@@ -45,9 +46,13 @@ class RobotConnector(Ros):
     def odom_qr_callback(self, message):
         """Callback for mobile base state updates"""
         if 'pose' in message:
-            orientation = message['pose']['orientation']
-            a = 2.0 * (orientation['w'] * orientation['z'])  # Simplified yaw extraction
-            pose = Pose(datetime.now(timezone(timedelta(hours=7))), message['pose']['x'], message['pose']['y'], a)
+            position = message['pose']['pose']['position']
+            orientation = message['pose']['pose']['orientation']
+            a = math.atan2(
+                2.0 * (orientation['w'] * orientation['z'] + orientation['x'] * orientation['y']),
+                1.0 - 2.0 * (orientation['y'] ** 2 + orientation['z'] ** 2)
+            )
+            pose = Pose(datetime.now(timezone(timedelta(hours=7))), position['x'], position['y'], a)
             if self.mobile_base_state is None:
                 self.mobile_base_state = MobileBaseState(None, pose)
             else:
@@ -81,7 +86,7 @@ class RobotConnector(Ros):
         """Send job to robot via ROS action. Use docs/ros_messages/WarehouseCommand.action"""
         """The Job resolve to target node here"""
 
-        if self.mobile_base_state.tag is None:
+        if self.mobile_base_state is None or self.mobile_base_state.tag is None:
             raise RuntimeError("Unable to route its location to the destination due to unknown current location")
 
         # Known current location
@@ -127,8 +132,6 @@ class RobotConnector(Ros):
         self.last_action_status = RobotActionStatus.OPERATING
         self.update_job_status(OrderStatus.IN_PROGRESS)
 
-        return self.action_future
-
 
 
     def update_job_status(self, status: OrderStatus):
@@ -157,11 +160,16 @@ class RobotHandler(RobotConnector):
     
     def assign(self, job: Job):
         self.job_queue.append(job)
-        self.trigger_job()
+        self.trigger()
 
     def update_job_status(self, status: OrderStatus):
-        self.current_job.status(status)
+        if self.current_job is None:
+            return
+        self.current_job.status = status
         self.job_updater.put_nowait(self.current_job)
+        if status in (OrderStatus.COMPLETED, OrderStatus.CANCELED, OrderStatus.FAILED):
+            self.current_job = None
+            self.trigger()
 
     def trigger(self):
         """A function that make the robot works if conditions are met"""
@@ -174,12 +182,12 @@ class RobotHandler(RobotConnector):
             # RobotActionStatus.OPERATING
         )
 
-        if self.active_status and self.connection_status() and self.current_job is None and self.job_queue.count() > 0 and is_ready_status:
+        if self.active_status and self.connection_status() == RobotConnectionStatus.ONLINE and self.current_job is None and len(self.job_queue) > 0 and is_ready_status:
             self.current_job = self.job_queue.pop(0)
             self.send_job(self.current_job)
     
     def clear_error(self) -> bool:
-        if RobotActionStatus.ERROR:
+        if self.last_action_status == RobotActionStatus.ERROR:
             self.last_action_status = RobotActionStatus.IDLE
             return True
         return False
