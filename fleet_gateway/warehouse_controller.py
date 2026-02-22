@@ -20,14 +20,14 @@ from fleet_gateway.route_oracle import RouteOracle
 
 
 class WarehouseController():
-    def __init__(self, async_queue: asyncio.Queue, fleet_handler: FleetHandler, order_store: OrderStore, route_oracle: RouteOracle):
-        self.async_queue = async_queue
+    def __init__(self, job_updater: asyncio.Queue, fleet_handler: FleetHandler, order_store: OrderStore, route_oracle: RouteOracle):
+        self.job_updater = job_updater
         self.fleet_handler = fleet_handler
         self.order_store = order_store
         self.route_oracle = route_oracle
 
         # Function to handle in redis
-        async def handle_async_queue(queue: asyncio.Queue):
+        async def handle_job_updater(queue: asyncio.Queue):
             while True:
                 job = await queue.get()
                 if await self.order_store.set_job(job):
@@ -35,7 +35,7 @@ class WarehouseController():
                 else:
                     print("Unable to update job in order store")
 
-        asyncio.create_task(handle_async_queue(self.async_queue))
+        asyncio.create_task(handle_job_updater(self.job_updater))
 
     def validate_job(self, robot_name: str, target_node_id: id) -> Node | None:
         # Check if node exists

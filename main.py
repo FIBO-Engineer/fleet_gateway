@@ -49,13 +49,13 @@ async def lifespan(app: FastAPI):
     )
     await app.state.redis.ping()
 
-    app.state.async_queue = asyncio.Queue()
+    app.state.job_updater = asyncio.Queue()
 
     app.state.order_store = OrderStore(app.state.redis)
 
-    app.state.fleet_handler = FleetHandler(app.state.async_queue, app.state.route_oracle, ROBOTS_CONFIG)
+    app.state.fleet_handler = FleetHandler(app.state.job_updater, app.state.route_oracle, ROBOTS_CONFIG)
 
-    app.state.warehouse_controller = WarehouseController(app.state.async_queue, app.state.fleet_handler, app.state.order_store, app.state.route_oracle)
+    app.state.warehouse_controller = WarehouseController(app.state.job_updater, app.state.fleet_handler, app.state.order_store, app.state.route_oracle)
 
     stop_event = asyncio.Event()
 

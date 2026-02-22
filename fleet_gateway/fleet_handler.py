@@ -6,10 +6,10 @@ import asyncio
 
 class FleetHandler():
     """Work as a robot grouper"""
-    def __init__(self, async_queue: asyncio.Queue, route_oracle: RouteOracle, robots_config : dict):
+    def __init__(self, job_updater: asyncio.Queue, route_oracle: RouteOracle, robots_config : dict):
         """Initialize all sub-components"""
         self.handlers : dict[str, RobotHandler] = {
-            name: RobotHandler(name, cfg["host"], cfg["port"], cfg["cell_heights"], async_queue, route_oracle) 
+            name: RobotHandler(name, cfg["host"], cfg["port"], cfg["cell_heights"], job_updater, route_oracle) 
             for name, cfg in robots_config.items()
         }
 

@@ -7,7 +7,7 @@ from fleet_gateway.helpers.serializers import node_to_dict
 from roslibpy import ActionClient, Goal, GoalStatus, Ros, Topic
 
 from fleet_gateway.enums import RobotConnectionStatus, RobotActionStatus
-from fleet_gateway.api.types import Robot, RobotCell, Job, Node, MobileBaseState, Pose, Tag, PiggybackState
+from fleet_gateway.api.types import Robot, RobotCell, Job, OrderStatus, Node, MobileBaseState, Pose, Tag, PiggybackState
 
 class RobotConnector(Ros):
     """
@@ -104,16 +104,15 @@ class RobotConnector(Ros):
             match result["status"]:
                 case GoalStatus.SUCCEEDED:
                     self.last_action_status = RobotActionStatus.IDLE
+                    self.update_job_status(OrderStatus.COMPLETED)
                 case GoalStatus.CANCELED:
                     self.last_action_status = RobotActionStatus.CANCELED
+                    self.update_job_status(OrderStatus.CANCELED)
                 case GoalStatus.ABORTED:
                     self.last_action_status = RobotActionStatus.ERROR
+                    self.update_job_status(OrderStatus.FAILED)
                 case _:
                     raise RuntimeError("Unexpected case on_result")
-            # Set Job status
-            
-            
-            # self.action_future.set_result(result)
 
         def on_feedback(feedback):
             """Handle job feedback"""
@@ -122,16 +121,15 @@ class RobotConnector(Ros):
         def on_error(error):
             """Handle job error"""
             print(f"{self.name} error")
-            # self.action_future.set_exception(error)
+            self.update_job_status(OrderStatus.FAILED)
 
         self.warehouse_cmd_action_client.send_goal(goal, on_result, on_feedback, on_error)
         self.last_action_status = RobotActionStatus.OPERATING
-        
-        # self.action_future = asyncio.Future[GoalStatus] = asyncio.get_running_loop().create_future()
+        self.update_job_status(OrderStatus.IN_PROGRESS)
 
         return self.action_future
-    
-    def notify_job_completion(self):
+
+    def update_job_status(self, status: OrderStatus):
         pass
     
     def to_robot(self):
@@ -148,17 +146,21 @@ class RobotConnector(Ros):
         return RobotConnectionStatus(self.is_connected)
 
 class RobotHandler(RobotConnector):
-    def __init__(self, name: str, host_ip: str, port: int, cell_heights: list[float], async_queue: asyncio.Queue, route_oracle: RouteOracle):
+    def __init__(self, name: str, host_ip: str, port: int, cell_heights: list[float], job_updater: asyncio.Queue, route_oracle: RouteOracle):
         super().__init__(name, host_ip, port, route_oracle)
         self.cells : list[RobotCell] = [RobotCell(height) for height in cell_heights]
         self.current_job : Job | None = None
         self.job_queue : list[Job] = []
-        self.async_queue = async_queue
+        self.job_updater = job_updater
     
     def assign(self, job: Job):
         self.job_queue.append(job)
         self.trigger_job()
-    
+
+    def update_job_status(self, status: OrderStatus):
+        self.current_job.status(status)
+        self.job_updater.put_nowait(self.current_job)
+
     def trigger(self):
         """A function that make the robot works if conditions are met"""
         # Must be active, idle, connected, queue not empty
@@ -173,10 +175,7 @@ class RobotHandler(RobotConnector):
         if self.active_status and self.connection_status() and self.current_job is None and self.job_queue.count() > 0 and is_ready_status:
             self.current_job = self.job_queue.pop(0)
             self.send_job(self.current_job)
-            
-    def notify_job_completion(self):
-        self.async_queue.put_nowait(self.job_queue)
-
+    
     def clear_error(self) -> bool:
         if RobotActionStatus.ERROR:
             self.last_action_status = RobotActionStatus.IDLE
