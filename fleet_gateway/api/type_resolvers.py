@@ -68,9 +68,9 @@ async def get_job_queue_by_robot(robot: Robot, info: strawberry.types.Info) -> l
 
 
 # Field resolvers for RobotCell type (called from types.py)
-async def get_holding_by_robot_cell(robot_cell: RobotCell, info: strawberry.types.Info) -> Request | None:
+async def get_holding_by_robot_cell(robot_cell: RobotCell, info: strawberry.types.Info) -> Job | None:
     """Resolve holding Request from RobotCell."""
     if robot_cell.holding_uuid is None:
         return None
     order_store: OrderStore = info.context["order_store"]
-    return await order_store.get_request(robot_cell.holding_uuid)
+    return await order_store.get_job(robot_cell.holding_uuid)
