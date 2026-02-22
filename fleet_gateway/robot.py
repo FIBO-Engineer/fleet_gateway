@@ -95,6 +95,8 @@ class RobotConnector(Ros):
             raise RuntimeError("Unable to query start_node")
         
         path_node_ids : list[int] = self.route_oracle.getShortestPathById(start_id=start_node.id, end_id=job.target_node.id)
+        if not path_node_ids:
+            raise RuntimeError("No path found to target node")
         path_nodes : list[Node] = self.route_oracle.getNodesByIds(node_ids=path_node_ids)
         
         goal = Goal({
@@ -117,7 +119,8 @@ class RobotConnector(Ros):
                     self.last_action_status = RobotActionStatus.ERROR
                     self.update_job_status(OrderStatus.FAILED)
                 case _:
-                    raise RuntimeError("Unexpected case on_result")
+                    self.last_action_status = RobotActionStatus.ERROR
+                    self.update_job_status(OrderStatus.FAILED)
 
         def on_feedback(feedback):
             """Handle job feedback"""
@@ -129,9 +132,9 @@ class RobotConnector(Ros):
             self.last_action_status = RobotActionStatus.ERROR
             self.update_job_status(OrderStatus.FAILED)
 
-        self.warehouse_cmd_action_client.send_goal(goal, on_result, on_feedback, on_error)
         self.last_action_status = RobotActionStatus.OPERATING
         self.update_job_status(OrderStatus.IN_PROGRESS)
+        self.warehouse_cmd_action_client.send_goal(goal, on_result, on_feedback, on_error)
 
 
 
@@ -189,10 +192,13 @@ class RobotHandler(RobotConnector):
                 self.send_job(self.current_job)
             except RuntimeError:
                 self.last_action_status = RobotActionStatus.ERROR
-                self.update_job_status(OrderStatus.FAILED)
+                self.current_job.status = OrderStatus.FAILED
+                self.job_updater.put_nowait(self.current_job)
+                self.current_job = None
     
     def clear_error(self) -> bool:
         if self.last_action_status == RobotActionStatus.ERROR:
             self.last_action_status = RobotActionStatus.IDLE
+            self.trigger()
             return True
         return False
