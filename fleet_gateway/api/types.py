@@ -108,9 +108,9 @@ class Robot:
 class RobotCell:
     """Robot cell storage with height and holding capacity"""
     height: float
-    holding: Request | None = strawberry.field(resolver=resolvers.get_holding_by_robot_cell, default=None)
+    holding: Job | None = strawberry.field(resolver=resolvers.get_holding_by_robot_cell, default=None)
     # Private variables
-    holding_uuid: strawberry.Private[str | None] = None
+    holding_uuid: strawberry.Private[UUID | None] = None
 
 # Helper types
 @strawberry.input
@@ -154,7 +154,6 @@ class JobOrderResult:
     message: str
     job: Job | None
     
-
 @strawberry.type
 class RequestOrderResult:
     success: bool

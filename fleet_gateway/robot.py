@@ -135,8 +135,6 @@ class RobotConnector(Ros):
         self.update_job_status(OrderStatus.IN_PROGRESS)
         self.warehouse_cmd_action_client.send_goal(goal, on_result, on_feedback, on_error)
 
-
-
     def update_job_status(self, status: OrderStatus):
         pass
     
