@@ -23,7 +23,7 @@ class RobotConnector(Ros):
         self.name = name
         self.active_status = True
         self.last_action_status = RobotActionStatus.IDLE
-        self.mobile_base_state = None
+        self.mobile_base_state = MobileBaseState(None, None)
         self.piggyback_state = None
 
         # Setup the action client
@@ -52,20 +52,12 @@ class RobotConnector(Ros):
                 2.0 * (orientation['w'] * orientation['z'] + orientation['x'] * orientation['y']),
                 1.0 - 2.0 * (orientation['y'] ** 2 + orientation['z'] ** 2)
             )
-            pose = Pose(datetime.now(timezone(timedelta(hours=7))), position['x'], position['y'], a)
-            if self.mobile_base_state is None:
-                self.mobile_base_state = MobileBaseState(None, pose)
-            else:
-                self.mobile_base_state.pose = pose
-    
+            self.mobile_base_state.pose = Pose(datetime.now(timezone(timedelta(hours=7))), position['x'], position['y'], a)
+
     def qr_id_callback(self, message):
         """"Callback for QR"""
         if 'data' in message:
-            tag = Tag(datetime.now(timezone(timedelta(hours=7))), message['data'])
-            if self.mobile_base_state is None:
-                self.mobile_base_state = MobileBaseState(tag, None)
-            else:
-                self.mobile_base_state.tag = tag
+            self.mobile_base_state.tag = Tag(datetime.now(timezone(timedelta(hours=7))), message['data'])
 
     def piggyback_callback(self, message):
         """Callback for piggyback state updates"""
@@ -79,7 +71,7 @@ class RobotConnector(Ros):
                     message["position"][message['name'].index('hook_left')],
                     message["position"][message['name'].index('hook_right')]
                 )
-            except ValueError:
+            except (ValueError, IndexError):
                 pass
 
     def send_job(self, job: Job):
@@ -161,6 +153,7 @@ class RobotHandler(RobotConnector):
         self.current_job : Job | None = None
         self.job_queue : list[Job] = []
         self.job_updater = job_updater
+        self.loop = asyncio.get_event_loop()
     
     def assign(self, job: Job):
         self.job_queue.append(job)
@@ -170,7 +163,7 @@ class RobotHandler(RobotConnector):
         if self.current_job is None:
             return
         self.current_job.status = status
-        self.job_updater.put_nowait(self.current_job)
+        self.loop.call_soon_threadsafe(self.job_updater.put_nowait, self.current_job)
         if status in (OrderStatus.COMPLETED, OrderStatus.CANCELED, OrderStatus.FAILED):
             self.current_job = None
             self.trigger()
@@ -193,7 +186,7 @@ class RobotHandler(RobotConnector):
             except RuntimeError:
                 self.last_action_status = RobotActionStatus.ERROR
                 self.current_job.status = OrderStatus.FAILED
-                self.job_updater.put_nowait(self.current_job)
+                self.loop.call_soon_threadsafe(self.job_updater.put_nowait, self.current_job)
                 self.current_job = None
     
     def clear_error(self) -> bool:
