@@ -39,7 +39,7 @@ class WarehouseController():
 
     def validate_job(self, robot_name: str, target_node_id: int) -> Node | None:
         # Check if node exists
-        target_node = self.route_oracle.getNodeById(None, target_node_id)
+        target_node = self.route_oracle.getNodeById(target_node_id)
         if target_node is None:
             return None #JobOrderResult(False, f"Unable to find target node id: {target_node_id}", None)
         
