@@ -126,6 +126,7 @@ class RobotConnector(Ros):
         def on_error(error):
             """Handle job error"""
             print(f"{self.name} error")
+            self.last_action_status = RobotActionStatus.ERROR
             self.update_job_status(OrderStatus.FAILED)
 
         self.warehouse_cmd_action_client.send_goal(goal, on_result, on_feedback, on_error)
@@ -184,7 +185,11 @@ class RobotHandler(RobotConnector):
 
         if self.active_status and self.connection_status() == RobotConnectionStatus.ONLINE and self.current_job is None and len(self.job_queue) > 0 and is_ready_status:
             self.current_job = self.job_queue.pop(0)
-            self.send_job(self.current_job)
+            try:
+                self.send_job(self.current_job)
+            except RuntimeError:
+                self.last_action_status = RobotActionStatus.ERROR
+                self.update_job_status(OrderStatus.FAILED)
     
     def clear_error(self) -> bool:
         if self.last_action_status == RobotActionStatus.ERROR:
