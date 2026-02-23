@@ -39,7 +39,7 @@ class WarehouseController():
                 else:
                     print("Unable to update job in order store")
 
-        asyncio.create_task(handle_job_updater(self.job_updater))
+        self._updater_task = asyncio.create_task(handle_job_updater(self.job_updater))
 
     def validate_job(self, robot_name: str, target_node_id: int) -> Node | None:
         # Check if node exists
@@ -56,45 +56,49 @@ class WarehouseController():
     async def accept_job_order(self, job_order: JobOrderInput) -> JobOrderResult:
         from fleet_gateway.api.types import Job, JobOrderResult
         if (target_node := self.validate_job(job_order.robot_name, job_order.target_node_id)) is None:
-            return JobOrderResult(False, f"Unable to validate robot {job_order.robot_name} or node {job_order.target_node_id}", None)
+            return JobOrderResult(success=False, message=f"Unable to validate robot {job_order.robot_name} or node {job_order.target_node_id}", job=None)
 
         # Try to insert data in order_store
-        job = Job(uuid4(), OrderStatus.QUEUING, job_order.operation, target_node, None, job_order.robot_name)
+        job = Job(uuid=uuid4(), status=OrderStatus.QUEUING, operation=job_order.operation,
+                  target_node=target_node, request_uuid=None, handling_robot_name=job_order.robot_name)
         if not await self.order_store.set_job(job):
-            return JobOrderResult(False, "Unable to set job in order store", None)
+            return JobOrderResult(success=False, message="Unable to set job in order store", job=None)
 
         # Just put into the queue
         self.fleet_handler.assign_job(job_order.robot_name, job)
-        return JobOrderResult(True, "Successfully save job into order store and robot", job)
-            
+        return JobOrderResult(success=True, message="Successfully save job into order store and robot", job=job)
+
     async def accept_request_order(self, request_order: RequestOrderInput) -> RequestOrderResult:
         from fleet_gateway.api.types import Job, Request, RequestOrderResult
         # This appends request and delivery job queue to the specified robot
         pd_nodes: list[Node] = []
         for target_node_id in [request_order.request.pickup_node_id, request_order.request.delivery_node_id]:
             if (target_node := self.validate_job(request_order.robot_name, target_node_id)) is None:
-                return RequestOrderResult(False, f"Unable to validate robot {request_order.robot_name} or node {target_node_id}", None)
+                return RequestOrderResult(success=False, message=f"Unable to validate robot {request_order.robot_name} or node {target_node_id}", request=None)
             else:
                 pd_nodes.append(target_node)
 
         request_uuid : UUID = uuid4()
-        pickup_job = Job(uuid4(), OrderStatus.QUEUING, JobOperation.PICKUP, pd_nodes[0], request_uuid, request_order.robot_name)
+        pickup_job = Job(uuid=uuid4(), status=OrderStatus.QUEUING, operation=JobOperation.PICKUP,
+                         target_node=pd_nodes[0], request_uuid=request_uuid, handling_robot_name=request_order.robot_name)
         if not await self.order_store.set_job(pickup_job):
-            return RequestOrderResult(False, f"Unable to store pickup job", None)
+            return RequestOrderResult(success=False, message=f"Unable to store pickup job", request=None)
 
-        delivery_job = Job(uuid4(), OrderStatus.QUEUING, JobOperation.DELIVERY, pd_nodes[1], request_uuid, request_order.robot_name)
+        delivery_job = Job(uuid=uuid4(), status=OrderStatus.QUEUING, operation=JobOperation.DELIVERY,
+                           target_node=pd_nodes[1], request_uuid=request_uuid, handling_robot_name=request_order.robot_name)
         if not await self.order_store.set_job(delivery_job):
-            return RequestOrderResult(False, f"Unable to store delivery job", None)
-        
-        request = Request(request_uuid, pickup_job.uuid, delivery_job.uuid, request_order.robot_name)
+            return RequestOrderResult(success=False, message=f"Unable to store delivery job", request=None)
+
+        request = Request(uuid=request_uuid, pickup_uuid=pickup_job.uuid,
+                          delivery_uuid=delivery_job.uuid, handling_robot_name=request_order.robot_name)
         if not await self.order_store.set_request(request):
-            return RequestOrderResult(False, f"Unable to store request job", None)
-        
+            return RequestOrderResult(success=False, message=f"Unable to store request job", request=None)
+
         # In robot layer, they don't care about request
         self.fleet_handler.assign_job(request_order.robot_name, pickup_job)
         self.fleet_handler.assign_job(request_order.robot_name, delivery_job)
 
-        return RequestOrderResult(True, f"Successfully save request into order store and queue in robot", request)
+        return RequestOrderResult(success=True, message=f"Successfully save request into order store and queue in robot", request=request)
 
     async def accept_warehouse_order(self, warehouse_order: WarehouseOrderInput) -> WarehouseOrderResult:
         raise NotImplementedError

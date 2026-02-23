@@ -114,7 +114,7 @@ class RobotConnector(Ros):
             """Handle job completion result"""
             match result["status"]:
                 case GoalStatus.SUCCEEDED:
-                    self.last_action_status = RobotActionStatus.IDLE
+                    self.last_action_status = RobotActionStatus.SUCCEEDED
                     self.update_job_status(OrderStatus.COMPLETED)
                 case GoalStatus.CANCELED:
                     self.last_action_status = RobotActionStatus.CANCELED
