@@ -31,6 +31,7 @@ class RouteOracle:
         if not res.data:
             return None
         data = res.data[0]
+        from fleet_gateway.api.types import Node
         return Node(data["id"], data.get("alias"), data["tag_id"], data["x"], data["y"], data["height"], NodeType(data["type"]))
 
     def getNodeById(self, node_id: int, graph_id: int | None = None) -> Node | None:
@@ -45,6 +46,7 @@ class RouteOracle:
         detailed_data = self.supabase.rpc("wh_get_nodes_by_ids",
                               {"p_graph_id": graph_id, "p_node_ids": node_ids}
                               ).execute()
+        from fleet_gateway.api.types import Node
         nodes: list[Node] = []
         for row in detailed_data.data:
             n = Node(

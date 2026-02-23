@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
 def dict_to_node(data: dict) -> Node | None:
     """Convert dict to Node object"""
+    from fleet_gateway.api.types import Node
     return Node(
         id=int(data['id']),
         alias=data['alias'],
@@ -32,6 +33,7 @@ def dict_to_request(uuid: UUID, data: dict) -> Request | None:
     """Convert dict from Redis storage to Request object"""
     if not data:
         return None
+    from fleet_gateway.api.types import Request
     return Request(
         uuid=uuid,
         pickup_uuid=UUID(data['pickup']),
@@ -45,6 +47,7 @@ def dict_to_job(uuid: UUID, data: dict) -> Job | None:
     # Parse target_node if it's a dict, otherwise assume it's already parsed
     if not data:
         return None
+    from fleet_gateway.api.types import Job
     return Job(
         uuid=uuid,
         status=OrderStatus(int(data['status'])),

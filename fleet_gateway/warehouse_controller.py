@@ -54,6 +54,7 @@ class WarehouseController():
         return target_node
 
     async def accept_job_order(self, job_order: JobOrderInput) -> JobOrderResult:
+        from fleet_gateway.api.types import Job, JobOrderResult
         if (target_node := self.validate_job(job_order.robot_name, job_order.target_node_id)) is None:
             return JobOrderResult(False, f"Unable to validate robot {job_order.robot_name} or node {job_order.target_node_id}", None)
 
@@ -67,6 +68,7 @@ class WarehouseController():
         return JobOrderResult(True, "Successfully save job into order store and robot", job)
             
     async def accept_request_order(self, request_order: RequestOrderInput) -> RequestOrderResult:
+        from fleet_gateway.api.types import Job, Request, RequestOrderResult
         # This appends request and delivery job queue to the specified robot
         pd_nodes: list[Node] = []
         for target_node_id in [request_order.request.pickup_node_id, request_order.request.delivery_node_id]:

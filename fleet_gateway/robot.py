@@ -162,6 +162,7 @@ class RobotHandler(RobotConnector):
         super().__init__(name, host_ip, port, route_oracle)
         self.cells : list[RobotCell] = [RobotCell(height) for height in cell_heights]
         self.current_job : Job | None = None
+        self.current_cell : RobotCellLevel | None = None
         self.job_queue : list[Job] = []
         self.job_updater = job_updater
         self.loop = asyncio.get_running_loop()
@@ -176,16 +177,19 @@ class RobotHandler(RobotConnector):
         self.current_job.status = status
         self.loop.call_soon_threadsafe(self.job_updater.put_nowait, self.current_job)
         if status in (OrderStatus.COMPLETED, OrderStatus.CANCELED, OrderStatus.FAILED):
+            if status == OrderStatus.COMPLETED and self.current_job.operation == JobOperation.PICKUP and self.current_cell is not None:
+                self.cells[self.current_cell.value].holding_uuid = self.current_job.uuid
+            self.current_cell = None
             self.current_job = None
             self.trigger()
 
     def find_free_cell(self) -> RobotCellLevel:
-        """Find the first free cell and allocate it. Raises RuntimeError if all cells are occupied."""
+        """Reserve the first free cell. Raises RuntimeError if all cells are occupied."""
         cell_idx = next((i for i, c in enumerate(self.cells) if c.holding_uuid is None), None)
         if cell_idx is None:
             raise RuntimeError("No free robot cell available for pickup")
-        self.cells[cell_idx].holding_uuid = self.current_job.uuid
-        return RobotCellLevel(cell_idx)
+        self.current_cell = RobotCellLevel(cell_idx)
+        return self.current_cell
 
     def trigger(self):
         """A function that make the robot works if conditions are met"""
@@ -210,6 +214,7 @@ class RobotHandler(RobotConnector):
                 self.last_action_status = RobotActionStatus.ERROR
                 self.current_job.status = OrderStatus.FAILED
                 self.loop.call_soon_threadsafe(self.job_updater.put_nowait, self.current_job)
+                self.current_cell = None
                 self.current_job = None
     
     def clear_error(self) -> bool:

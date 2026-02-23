@@ -22,7 +22,8 @@ class OrderStore():
         self.redis = redis_client
     
     async def set_request(self, request: Request) -> bool:
-        return await self.redis.hset(f"request:{str(request.uuid)}", mapping=request_to_dict(request)) > 0
+        await self.redis.hset(f"request:{str(request.uuid)}", mapping=request_to_dict(request))
+        return True
     
     async def get_request_status(self, request: Request) -> OrderStatus:
         pickup_job: Job = await self.get_job(request.pickup_uuid)
@@ -62,7 +63,8 @@ class OrderStore():
         return [request for k, d in zip(keys, await pipe.execute()) if (request:=dict_to_request(UUID(k.split(":", 1)[1]), d)) is not None]
 
     async def set_job(self, job: Job) -> bool:
-        return await self.redis.hset(f"job:{str(job.uuid)}", mapping=job_to_dict(job)) > 0
+        await self.redis.hset(f"job:{str(job.uuid)}", mapping=job_to_dict(job))
+        return True
 
     async def get_job(self, uuid: UUID) -> Job | None:
         return dict_to_job(uuid, await self.redis.hgetall(f"job:{str(uuid)}"))
