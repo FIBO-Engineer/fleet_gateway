@@ -101,16 +101,17 @@ class WarehouseController():
         return RequestOrderResult(success=True, message=f"Successfully save request into order store and queue in robot", request=request)
 
     async def accept_warehouse_order(self, warehouse_order: WarehouseOrderInput) -> WarehouseOrderResult:
-        raise NotImplementedError
+        from fleet_gateway.api.types import WarehouseOrderResult
+        return WarehouseOrderResult(success=False, message="Not implemented", requests=[])
 
     async def cancel_job_order(self, uuid: UUID) -> Job | None:
-        raise NotImplementedError
+        return None
 
     async def cancel_job_orders(self, uuids: list[UUID]) -> list[Job]:
-        raise NotImplementedError
+        return []
 
     async def cancel_request_order(self, uuid: UUID) -> Request | None:
-        raise NotImplementedError
+        return None
 
     async def cancel_request_orders(self, uuids: list[UUID]) -> list[Request]:
-        raise NotImplementedError
+        return []

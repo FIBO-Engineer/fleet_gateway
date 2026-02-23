@@ -25,19 +25,28 @@ async def get_request_status(request: Request, info: strawberry.types.Info) -> O
 async def get_pickup_job_by_request(request: Request, info: strawberry.types.Info) -> Job:
     """Resolve pickup Job from Request."""
     order_store: OrderStore = info.context["order_store"]
-    return await order_store.get_job(request.pickup_uuid)
+    job = await order_store.get_job(request.pickup_uuid)
+    if job is None:
+        raise ValueError(f"Pickup job {request.pickup_uuid} not found in order store")
+    return job
 
 
 async def get_delievery_job_by_request(request: Request, info: strawberry.types.Info) -> Job:
     """Resolve delivery Job from Request."""
     order_store: OrderStore = info.context["order_store"]
-    return await order_store.get_job(request.delivery_uuid)
+    job = await order_store.get_job(request.delivery_uuid)
+    if job is None:
+        raise ValueError(f"Delivery job {request.delivery_uuid} not found in order store")
+    return job
 
 
-async def get_handling_robot_by_request(request: Request, info: strawberry.types.Info) -> Robot | None:
+async def get_handling_robot_by_request(request: Request, info: strawberry.types.Info) -> Robot:
     """Resolve handling Robot from Request."""
     fleet_handler: FleetHandler = info.context["fleet_handler"]
-    return fleet_handler.get_robot(request.handling_robot_name)
+    robot = fleet_handler.get_robot(request.handling_robot_name)
+    if robot is None:
+        raise ValueError(f"Robot '{request.handling_robot_name}' not found in fleet")
+    return robot
 
 # Field resolvers for Job type (called from types.py)
 
@@ -52,7 +61,10 @@ async def get_request_by_job(job: Job, info: strawberry.types.Info) -> Request |
 async def get_handling_robot_by_job(job: Job, info: strawberry.types.Info) -> Robot:
     """Resolve handling Robot from Job."""
     fleet_handler: FleetHandler = info.context["fleet_handler"]
-    return fleet_handler.get_robot(job.handling_robot_name)
+    robot = fleet_handler.get_robot(job.handling_robot_name)
+    if robot is None:
+        raise ValueError(f"Robot '{job.handling_robot_name}' not found in fleet")
+    return robot
 
 
 # Field resolvers for Robot type (called from types.py)
