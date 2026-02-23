@@ -17,9 +17,10 @@ from fleet_gateway.helpers.serializers import node_to_dict
 from roslibpy import ActionClient, Goal, GoalStatus, Ros, Topic
 
 from fleet_gateway.enums import OrderStatus, RobotConnectionStatus, RobotActionStatus, JobOperation, RobotCellLevel
+from fleet_gateway.models import MobileBaseState, Pose, Tag, PiggybackState, RobotCell
 
 if TYPE_CHECKING:
-    from fleet_gateway.api.types import Robot, RobotCell, Job, Node, MobileBaseState, Pose, Tag, PiggybackState
+    from fleet_gateway.api.types import Robot, Job, Node
 
 class RobotConnector(Ros):
     """
@@ -144,6 +145,7 @@ class RobotConnector(Ros):
     
     def to_robot(self):
         """Convert RobotConnector state to Robot object"""
+        from fleet_gateway.api.types import Robot
         return Robot(
             name=self.name,
             connection_status=self.connection_status(),
