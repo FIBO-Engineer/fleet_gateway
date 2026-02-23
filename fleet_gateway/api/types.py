@@ -110,7 +110,7 @@ class RobotCell:
     height: float
     holding: Job | None = strawberry.field(resolver=resolvers.get_holding_by_robot_cell)
     # Private variables
-    holding_uuid: strawberry.Private[UUID | None]
+    holding_uuid: strawberry.Private[UUID | None] = None
 
 # Helper types
 @strawberry.input

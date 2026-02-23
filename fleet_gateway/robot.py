@@ -16,7 +16,7 @@ from fleet_gateway.helpers.serializers import node_to_dict
 
 from roslibpy import ActionClient, Goal, GoalStatus, Ros, Topic
 
-from fleet_gateway.enums import OrderStatus, RobotConnectionStatus, RobotActionStatus
+from fleet_gateway.enums import OrderStatus, RobotConnectionStatus, RobotActionStatus, JobOperation, RobotCellLevel
 
 if TYPE_CHECKING:
     from fleet_gateway.api.types import Robot, RobotCell, Job, Node, MobileBaseState, Pose, Tag, PiggybackState
@@ -85,7 +85,7 @@ class RobotConnector(Ros):
             except (ValueError, IndexError):
                 pass
 
-    def send_job(self, job: Job):
+    def send_job(self, job: Job, robot_cell: RobotCellLevel):
         """Send job to robot via ROS action. Use docs/ros_messages/WarehouseCommand.action"""
         """The Job resolve to target node here"""
 
@@ -105,7 +105,7 @@ class RobotConnector(Ros):
         goal = Goal({
             'nodes': [ node_to_dict(node) for node in path_nodes ],
             'operation': job.operation.value,
-            'robot_cell': job.robot_cell
+            'robot_cell': robot_cell.value
         })
 
         # Send goal with callbacks
@@ -177,6 +177,14 @@ class RobotHandler(RobotConnector):
             self.current_job = None
             self.trigger()
 
+    def find_free_cell(self) -> RobotCellLevel:
+        """Find the first free cell and allocate it. Raises RuntimeError if all cells are occupied."""
+        cell_idx = next((i for i, c in enumerate(self.cells) if c.holding_uuid is None), None)
+        if cell_idx is None:
+            raise RuntimeError("No free robot cell available for pickup")
+        self.cells[cell_idx].holding_uuid = self.current_job.uuid
+        return RobotCellLevel(cell_idx)
+
     def trigger(self):
         """A function that make the robot works if conditions are met"""
         # Must be active, idle, connected, queue not empty
@@ -191,7 +199,11 @@ class RobotHandler(RobotConnector):
         if self.active_status and self.connection_status() == RobotConnectionStatus.ONLINE and self.current_job is None and len(self.job_queue) > 0 and is_ready_status:
             self.current_job = self.job_queue.pop(0)
             try:
-                self.send_job(self.current_job)
+                if self.current_job.operation == JobOperation.PICKUP:
+                    robot_cell = self.find_free_cell()
+                else:
+                    robot_cell = RobotCellLevel.UNUSED
+                self.send_job(self.current_job, robot_cell)
             except RuntimeError:
                 self.last_action_status = RobotActionStatus.ERROR
                 self.current_job.status = OrderStatus.FAILED

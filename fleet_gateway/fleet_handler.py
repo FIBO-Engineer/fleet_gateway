@@ -7,7 +7,7 @@ from fleet_gateway.robot import RobotHandler
 from fleet_gateway.route_oracle import RouteOracle
 
 if TYPE_CHECKING:
-    from fleet_gateway.api.types import Robot, RobotCell, Job
+    from fleet_gateway.api.types import Robot, RobotCell, Job, RobotCellInput
 
 
 class FleetHandler():
@@ -47,3 +47,13 @@ class FleetHandler():
         if name not in self.handlers:
             return []
         return self.handlers[name].job_queue
+
+    async def free_cell(self, robot_cell: RobotCellInput) -> RobotCell | None:
+        if robot_cell.robot_name not in self.handlers:
+            return None
+        handler = self.handlers[robot_cell.robot_name]
+        if robot_cell.cell_index < 0 or robot_cell.cell_index >= len(handler.cells):
+            return None
+        cell = handler.cells[robot_cell.cell_index]
+        cell.holding_uuid = None
+        return cell

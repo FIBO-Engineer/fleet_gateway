@@ -8,7 +8,7 @@ from __future__ import annotations
 import strawberry
 from uuid import UUID
 
-from fleet_gateway.api.types import Robot, Job, Request, JobOrderInput, JobOrderResult, RequestOrderInput, RequestOrderResult, WarehouseOrderInput, WarehouseOrderResult, RobotCellInput
+from fleet_gateway.api.types import Robot, RobotCell, Job, Request, JobOrderInput, JobOrderResult, RequestOrderInput, RequestOrderResult, WarehouseOrderInput, WarehouseOrderResult, RobotCellInput
 from fleet_gateway.warehouse_controller import WarehouseController
 from fleet_gateway.fleet_handler import FleetHandler
 from fleet_gateway.order_store import OrderStore
@@ -20,13 +20,13 @@ class Query:
     async def robot(self, info: strawberry.types.Info, name: str) -> Robot | None:
         """Get a specific robot by name."""
         fleet_handler: FleetHandler = info.context["fleet_handler"]
-        return await fleet_handler.get_robot(name)
+        return fleet_handler.get_robot(name)
 
     @strawberry.field
     async def robots(self, info: strawberry.types.Info) -> list[Robot]:
         """Get all robots in the fleet."""
         fleet_handler: FleetHandler = info.context["fleet_handler"]
-        return await fleet_handler.get_robots()
+        return fleet_handler.get_robots()
 
     @strawberry.field
     async def request(self, info: strawberry.types.Info, uuid: UUID) -> Request | None:
@@ -100,7 +100,7 @@ class Mutation:
         return await warehouse_controller.cancel_request_orders(uuids)
     
     @strawberry.mutation
-    async def free_robot_cell(self, info: strawberry.types.Info, robot_cell: RobotCellInput) -> Request | None:
+    async def free_robot_cell(self, info: strawberry.types.Info, robot_cell: RobotCellInput) -> RobotCell | None:
         fleet_handler: FleetHandler = info.context["fleet_handler"]
         return await fleet_handler.free_cell(robot_cell)
 

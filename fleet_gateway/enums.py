@@ -16,6 +16,20 @@ class NodeType(Enum):
     CELL = 3
     DEPOT = 4
 
+class RobotCellLevel(Enum):
+    UNUSED = -1 # Indicating that robot_cell is not used in the process e.g., TRAVEL operation
+    CELL_0 = 0
+    CELL_1 = 1
+    CELL_2 = 2
+    CELL_3 = 3
+    CELL_4 = 4
+    CELL_5 = 5
+    CELL_6 = 6
+    CELL_7 = 7
+    CELL_8 = 8
+    CELL_9 = 9
+    
+
 class RobotConnectionStatus(Enum):
     """Robot Connection status"""
     OFFLINE = 0

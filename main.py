@@ -13,7 +13,7 @@ from fleet_gateway.order_store import OrderStore
 from fleet_gateway.route_oracle import RouteOracle
 from fleet_gateway.warehouse_controller import WarehouseController
 
-from fleet_gateway.api import schema
+from fleet_gateway.api.schema import schema
 
 # Load environment variables
 load_dotenv()
@@ -72,6 +72,7 @@ async def get_context(request):
         "order_store": request.app.state.order_store,
         "route_oracle": request.app.state.route_oracle,
         "fleet_handler": request.app.state.fleet_handler,
+        "warehouse_controller": request.app.state.warehouse_controller,
     }
 
 # Create GraphQL router with context getter
