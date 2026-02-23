@@ -32,7 +32,7 @@ class RouteOracle:
             return None
         data = res.data[0]
         from fleet_gateway.api.types import Node
-        return Node(data["id"], data.get("alias"), data["tag_id"], data["x"], data["y"], data["height"], NodeType(data["type"]))
+        return Node(id=data["id"], alias=data.get("alias"), tag_id=data["tag_id"], x=data["x"], y=data["y"], height=data["height"], node_type=NodeType(data["type"]))
 
     def getNodeById(self, node_id: int, graph_id: int | None = None) -> Node | None:
         return node[0] if (node := self.getNodesByIds([node_id], graph_id)) else None

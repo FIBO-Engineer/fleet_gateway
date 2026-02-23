@@ -1,7 +1,7 @@
 import asyncio
 import json
 import os
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 
 import redis.asyncio as redis
 from dotenv import load_dotenv
@@ -57,13 +57,10 @@ async def lifespan(app: FastAPI):
 
     app.state.warehouse_controller = WarehouseController(app.state.job_updater, app.state.fleet_handler, app.state.order_store, app.state.route_oracle)
 
-    stop_event = asyncio.Event()
-
     try:
         yield
     finally:
-        stop_event.set()
-        # await auto_connector
+        app.state.warehouse_controller._updater_task.cancel()
         await app.state.redis.aclose()
 
 async def get_context(request):
