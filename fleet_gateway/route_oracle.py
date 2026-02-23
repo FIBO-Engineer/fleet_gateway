@@ -6,6 +6,14 @@ from supabase import create_client, Client
 
 from fleet_gateway.enums import NodeType
 
+_NODE_TYPE_LOOKUP: dict[str, NodeType] = {
+    'waypoint': NodeType.WAYPOINT,
+    'conveyor': NodeType.CONVEYOR,
+    'shelf':    NodeType.SHELF,
+    'cell':     NodeType.CELL,
+    'depot':    NodeType.DEPOT,
+}
+
 if TYPE_CHECKING:
     from fleet_gateway.api.types import Node
 
@@ -32,7 +40,7 @@ class RouteOracle:
             return None
         data = res.data[0]
         from fleet_gateway.api.types import Node
-        return Node(id=data["id"], alias=data.get("alias"), tag_id=data["tag_id"], x=data["x"], y=data["y"], height=data["height"], node_type=NodeType(data["type"]))
+        return Node(id=data["id"], alias=data.get("alias"), tag_id=data["tag_id"], x=data["x"], y=data["y"], height=data["height"], node_type=_NODE_TYPE_LOOKUP[data["type"]])
 
     def getNodeById(self, node_id: int, graph_id: int | None = None) -> Node | None:
         return node[0] if (node := self.getNodesByIds([node_id], graph_id)) else None
@@ -56,7 +64,7 @@ class RouteOracle:
                 x=row["x"],
                 y=row["y"],
                 height=row["height"],
-                node_type=NodeType(row["type"])
+                node_type=_NODE_TYPE_LOOKUP[row["type"]]
             )
             nodes.append(n)
         return nodes
@@ -91,9 +99,9 @@ def main():
     url: str = os.environ.get("SUPABASE_URL")
     key: str = os.environ.get("SUPABASE_KEY")
     ro = RouteOracle(url, key, None)
-    path = ro.getShortestPathByAlias(start_alias="W3", end_alias="W8", graph_id=2)
+    path = ro.getShortestPathByAlias(start_alias="S2L3", end_alias="S5L2", graph_id=2)
     nodes = ro.getNodesByIds(path, graph_id=2)
-    print(nodes)
+    print([n.alias for n in nodes])
 
 if __name__ == "__main__":
     main()
