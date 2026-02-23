@@ -26,7 +26,6 @@ def request_to_dict(request: Request) -> dict:
     """Convert Request object to dict for Redis storage"""
     return {
         # 'uuid': str(request.uuid),
-        'status': request.status.value,
         'pickup': str(request.pickup_uuid),
         'delivery': str(request.delivery_uuid),
         'handling_robot': request.handling_robot_name,

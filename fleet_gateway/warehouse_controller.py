@@ -84,7 +84,7 @@ class WarehouseController():
         if not await self.order_store.set_job(delivery_job):
             return RequestOrderResult(False, f"Unable to store delivery job", None)
         
-        request = Request(request_uuid, OrderStatus.IN_PROGRESS, pickup_job.uuid, delivery_job.uuid, request_order.robot_name)
+        request = Request(request_uuid, pickup_job.uuid, delivery_job.uuid, request_order.robot_name)
         if not await self.order_store.set_request(request):
             return RequestOrderResult(False, f"Unable to store request job", None)
         

@@ -34,7 +34,6 @@ def dict_to_request(uuid: UUID, data: dict) -> Request | None:
         return None
     return Request(
         uuid=uuid,
-        status=OrderStatus(int(data['status'])),
         pickup_uuid=UUID(data['pickup']),
         delivery_uuid=UUID(data['delivery']),
         handling_robot_name=data['handling_robot']
