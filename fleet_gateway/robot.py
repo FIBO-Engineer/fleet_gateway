@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import asyncio
+import logging
 import math
 from datetime import datetime, timezone, timedelta
 
@@ -18,6 +19,8 @@ from roslibpy import ActionClient, Goal, GoalStatus, Ros, Topic
 
 from fleet_gateway.enums import OrderStatus, RobotConnectionStatus, RobotActionStatus, JobOperation, RobotCellLevel
 from fleet_gateway.models import MobileBaseState, Pose, Tag, PiggybackState, RobotCell
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from fleet_gateway.api.types import Robot, Job, Node
@@ -94,14 +97,14 @@ class RobotConnector(Ros):
             raise RuntimeError("Unable to route its location to the destination due to unknown current location")
 
         # Known current location
-        start_node: Node | None = self.route_oracle.getNodeByTagId(tag_id=self.mobile_base_state.tag.qr_id)
+        start_node: Node | None = self.route_oracle.get_node_by_tag_id(tag_id=self.mobile_base_state.tag.qr_id)
         if start_node is None:
             raise RuntimeError("Unable to query start_node")
-        
-        path_node_ids : list[int] = self.route_oracle.getShortestPathById(start_id=start_node.id, end_id=job.target_node.id)
+
+        path_node_ids : list[int] = self.route_oracle.get_shortest_path_by_id(start_id=start_node.id, end_id=job.target_node.id)
         if not path_node_ids:
             raise RuntimeError("No path found to target node")
-        path_nodes : list[Node] = self.route_oracle.getNodesByIds(node_ids=path_node_ids)
+        path_nodes : list[Node] = self.route_oracle.get_nodes_by_ids(node_ids=path_node_ids)
         
         goal = Goal({
             'nodes': [ node_to_dict(node) for node in path_nodes ],
@@ -132,7 +135,7 @@ class RobotConnector(Ros):
 
         def on_error(error):
             """Handle job error"""
-            print(f"{self.name} error")
+            logger.error("Robot %s action error", self.name)
             self.last_action_status = RobotActionStatus.ERROR
             self.update_job_status(OrderStatus.FAILED)
 

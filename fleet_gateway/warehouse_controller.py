@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 import asyncio
+import logging
 
 from fleet_gateway.enums import JobOperation, OrderStatus
 
@@ -22,6 +23,8 @@ from fleet_gateway.fleet_handler import FleetHandler
 from fleet_gateway.order_store import OrderStore
 from fleet_gateway.route_oracle import RouteOracle
 
+logger = logging.getLogger(__name__)
+
 
 class WarehouseController():
     def __init__(self, job_updater: asyncio.Queue, fleet_handler: FleetHandler, order_store: OrderStore, route_oracle: RouteOracle):
@@ -35,15 +38,15 @@ class WarehouseController():
             while True:
                 job = await queue.get()
                 if await self.order_store.set_job(job):
-                    print("Updated job status in order store")
+                    logger.info("Updated job %s status to %s in order store", job.uuid, job.status)
                 else:
-                    print("Unable to update job in order store")
+                    logger.error("Unable to update job %s in order store", job.uuid)
 
         self._updater_task = asyncio.create_task(handle_job_updater(self.job_updater))
 
     def validate_job(self, robot_name: str, target_node_id: int) -> Node | None:
         # Check if node exists
-        target_node = self.route_oracle.getNodeById(target_node_id)
+        target_node = self.route_oracle.get_node_by_id(target_node_id)
         if target_node is None:
             return None #JobOrderResult(False, f"Unable to find target node id: {target_node_id}", None)
         
