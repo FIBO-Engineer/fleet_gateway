@@ -48,6 +48,14 @@ class FleetHandler():
             return []
         return self.handlers[name].job_queue
 
+    def shutdown(self):
+        """Stop reconnect loops and close all robot WebSocket connections."""
+        for handler in self.handlers.values():
+            handler.shutdown()
+        if self.handlers:
+            # The Twisted reactor is shared; terminate it via any handler instance
+            next(iter(self.handlers.values())).terminate()
+
     async def free_cell(self, robot_cell: RobotCellInput) -> RobotCell | None:
         if robot_cell.robot_name not in self.handlers:
             return None

@@ -29,16 +29,6 @@ SUPABASE_KEY = os.getenv('SUPABASE_KEY', '')
 GRAPH_ID = int(os.getenv('GRAPH_ID', '1'))
 ROBOTS_CONFIG = json.loads(os.getenv('ROBOTS_CONFIG', '{}'))
 
-# async def handler_connect_loop(fleet: FleetOrchestrator, stop_event: asyncio.Event):
-#     while not stop_event.is_set():
-#         for robot_handler in fleet.robots.values():
-#             if not robot_handler.is_connected():
-#                 robot_handler.connect()
-
-#         # Just delay for 1 second or stop_event is triggered
-#         with suppress(asyncio.TimeoutError):
-#             await asyncio.wait_for(stop_event.wait(), timeout=1.0)
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Initialize RouteOracle (Supabase client)

@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING
 import asyncio
 import logging
 import math
+import threading
+import time
 from datetime import datetime, timezone, timedelta
 
 from fleet_gateway.route_oracle import RouteOracle
@@ -22,6 +24,8 @@ from fleet_gateway.models import MobileBaseState, Pose, Tag, PiggybackState, Rob
 
 logger = logging.getLogger(__name__)
 
+_RECONNECT_INTERVAL = 5.0  # seconds between reconnect attempts
+
 if TYPE_CHECKING:
     from fleet_gateway.api.types import Robot, Job, Node
 
@@ -32,7 +36,11 @@ class RobotConnector(Ros):
 
     def __init__(self, name: str, host_ip: str, port: int, route_oracle: RouteOracle):
         super().__init__(host=host_ip, port=port)
-        self.run(1.0)
+        self._should_reconnect = True
+        try:
+            self.run(1.0)
+        except Exception as e:
+            logger.warning("Robot %s initial connection failed: %s. Will retry via reconnect loop.", name, e)
 
         # Robot state (all operational state in one place)
         self.name = name
@@ -57,6 +65,18 @@ class RobotConnector(Ros):
 
         # Setup route oracle
         self.route_oracle: RouteOracle = route_oracle
+
+        # Log connection events
+        self.on('connection', lambda: logger.info("Robot %s connected", self.name))
+        self.on('close', lambda: logger.warning("Robot %s connection closed", self.name))
+
+        # Start reconnect loop in a daemon thread (no Twisted imports needed)
+        self._reconnect_thread = threading.Thread(
+            target=self._reconnect_loop,
+            name=f"reconnect-{name}",
+            daemon=True,
+        )
+        self._reconnect_thread.start()
 
     def odom_qr_callback(self, message):
         """Callback for mobile base state updates"""
@@ -88,6 +108,28 @@ class RobotConnector(Ros):
                 )
             except (ValueError, IndexError):
                 pass
+
+    # ------------------------------------------------------------------ #
+    # Auto-reconnect                                                       #
+    # ------------------------------------------------------------------ #
+
+    def _reconnect_loop(self):
+        """Daemon thread: calls self.run(1.0) whenever the robot is not connected."""
+        while self._should_reconnect:
+            time.sleep(_RECONNECT_INTERVAL)
+            if self._should_reconnect and not self.is_connected:
+                logger.info("Robot %s not connected, attempting reconnect...", self.name)
+                try:
+                    self.run(1.0)
+                except Exception as e:
+                    logger.error("Robot %s reconnect error: %s", self.name, e)
+
+    def shutdown(self):
+        """Stop reconnect loop and close the WebSocket connection."""
+        self._should_reconnect = False
+        self.close()
+
+    # ------------------------------------------------------------------ #
 
     def send_job(self, job: Job, robot_cell: RobotCellLevel):
         """Send job to robot via ROS action. Use docs/ros_messages/WarehouseCommand.action"""
