@@ -8,9 +8,13 @@ from __future__ import annotations
 import strawberry
 from uuid import UUID
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from fleet_gateway import enums
-import fleet_gateway.api.type_resolvers as resolvers
+
+if TYPE_CHECKING:
+    from fleet_gateway.order_store import OrderStore
+    from fleet_gateway.fleet_handler import FleetHandler
 
 NodeType = strawberry.enum(enums.NodeType)
 RobotConnectionStatus = strawberry.enum(enums.RobotConnectionStatus)
@@ -35,14 +39,39 @@ class Node:
 class Request:
     """Warehouse request (pickup + delivery pair)"""
     uuid: UUID
-    status: OrderStatus = strawberry.field(resolver=resolvers.get_request_status)
-    pickup: Job = strawberry.field(resolver=resolvers.get_pickup_job_by_request)
-    delivery: Job = strawberry.field(resolver=resolvers.get_delievery_job_by_request)
-    handling_robot: Robot = strawberry.field(resolver=resolvers.get_handling_robot_by_request)
     # Private variables
     pickup_uuid: strawberry.Private[UUID]
     delivery_uuid: strawberry.Private[UUID]
     handling_robot_name: strawberry.Private[str]
+
+    @strawberry.field
+    async def status(self, info: strawberry.types.Info) -> OrderStatus:
+        order_store: OrderStore = info.context["order_store"]
+        return await order_store.get_request_status(self)
+
+    @strawberry.field
+    async def pickup(self, info: strawberry.types.Info) -> Job:
+        order_store: OrderStore = info.context["order_store"]
+        job = await order_store.get_job(self.pickup_uuid)
+        if job is None:
+            raise ValueError(f"Pickup job {self.pickup_uuid} not found in order store")
+        return job
+
+    @strawberry.field
+    async def delivery(self, info: strawberry.types.Info) -> Job:
+        order_store: OrderStore = info.context["order_store"]
+        job = await order_store.get_job(self.delivery_uuid)
+        if job is None:
+            raise ValueError(f"Delivery job {self.delivery_uuid} not found in order store")
+        return job
+
+    @strawberry.field
+    async def handling_robot(self, info: strawberry.types.Info) -> Robot:
+        fleet_handler: FleetHandler = info.context["fleet_handler"]
+        robot = fleet_handler.get_robot(self.handling_robot_name)
+        if robot is None:
+            raise ValueError(f"Robot '{self.handling_robot_name}' not found in fleet")
+        return robot
 
 @strawberry.type
 class Job:
@@ -52,11 +81,24 @@ class Job:
     status: OrderStatus
     operation: JobOperation
     target_node: Node
-    request: Request | None = strawberry.field(resolver=resolvers.get_request_by_job)
-    handling_robot: Robot = strawberry.field(resolver=resolvers.get_handling_robot_by_job)
     # Private variables
     request_uuid: strawberry.Private[UUID | None]
     handling_robot_name: strawberry.Private[str]
+
+    @strawberry.field
+    async def request(self, info: strawberry.types.Info) -> Request | None:
+        if self.request_uuid is None:
+            return None
+        order_store: OrderStore = info.context["order_store"]
+        return await order_store.get_request(self.request_uuid)
+
+    @strawberry.field
+    async def handling_robot(self, info: strawberry.types.Info) -> Robot:
+        fleet_handler: FleetHandler = info.context["fleet_handler"]
+        robot = fleet_handler.get_robot(self.handling_robot_name)
+        if robot is None:
+            raise ValueError(f"Robot '{self.handling_robot_name}' not found in fleet")
+        return robot
 
 @strawberry.type
 class Tag:
@@ -94,23 +136,38 @@ class Robot:
     last_action_status: RobotActionStatus
     mobile_base_state: MobileBaseState | None
     piggyback_state: PiggybackState | None
-
-    # Cell allocations: request UUID per cell (None = empty cell)
-    cells: list[RobotCell] = strawberry.field(resolver=resolvers.get_robot_cells_by_robot)
-    current_job: Job | None = strawberry.field(resolver=resolvers.get_current_job_by_robot)
-    job_queue: list[Job] = strawberry.field(resolver=resolvers.get_job_queue_by_robot)
     # Private variables
     current_job_uuid: strawberry.Private[UUID | None] = None
     job_queue_uuid: strawberry.Private[list[UUID]] = strawberry.field(default_factory=list)
 
-    
+    @strawberry.field
+    async def cells(self, info: strawberry.types.Info) -> list[RobotCell]:
+        fleet_handler: FleetHandler = info.context["fleet_handler"]
+        return fleet_handler.get_robot_cells(self.name)
+
+    @strawberry.field
+    async def current_job(self, info: strawberry.types.Info) -> Job | None:
+        fleet_handler: FleetHandler = info.context["fleet_handler"]
+        return fleet_handler.get_current_job(self.name)
+
+    @strawberry.field
+    async def job_queue(self, info: strawberry.types.Info) -> list[Job]:
+        fleet_handler: FleetHandler = info.context["fleet_handler"]
+        return fleet_handler.get_job_queue(self.name)
+
 @strawberry.type
 class RobotCell:
     """Robot cell storage with height and holding capacity"""
     height: float
-    holding: Job | None = strawberry.field(resolver=resolvers.get_holding_by_robot_cell)
     # Private variables
     holding_uuid: strawberry.Private[UUID | None] = None
+
+    @strawberry.field
+    async def holding(self, info: strawberry.types.Info) -> Job | None:
+        if self.holding_uuid is None:
+            return None
+        order_store: OrderStore = info.context["order_store"]
+        return await order_store.get_job(self.holding_uuid)
 
 # Helper types
 @strawberry.input
@@ -153,7 +210,7 @@ class JobOrderResult:
     success: bool
     message: str
     job: Job | None
-    
+
 @strawberry.type
 class RequestOrderResult:
     success: bool
