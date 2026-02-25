@@ -38,8 +38,12 @@ ROBOTS_CONFIG = json.loads(os.getenv('ROBOTS_CONFIG', '{}'))
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Initialize GraphOracle
-    app.state.route_oracle = RouteOracle(SUPABASE_URL, SUPABASE_KEY, GRAPH_ID)
+    # Initialize RouteOracle (Supabase client)
+    try:
+        app.state.route_oracle = RouteOracle(SUPABASE_URL, SUPABASE_KEY, GRAPH_ID)
+    except Exception as e:
+        print(f"[ERROR] Unable to initialize Supabase client (url={SUPABASE_URL!r}) – {e}")
+        raise
 
     # Initialize Redis connection
     app.state.redis = redis.Redis(
@@ -47,7 +51,11 @@ async def lifespan(app: FastAPI):
         port=REDIS_PORT,
         decode_responses=True
     )
-    await app.state.redis.ping()
+    try:
+        await app.state.redis.ping()
+    except Exception as e:
+        print(f"[ERROR] Unable to connect to Redis at {REDIS_HOST}:{REDIS_PORT} – {e}")
+        raise
 
     app.state.job_updater = asyncio.Queue()
 
