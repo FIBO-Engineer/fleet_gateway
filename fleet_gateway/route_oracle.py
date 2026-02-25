@@ -1,6 +1,5 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
-import logging
 
 from supabase import create_client, Client
 
@@ -17,7 +16,7 @@ _NODE_TYPE_LOOKUP: dict[str, NodeType] = {
 if TYPE_CHECKING:
     from fleet_gateway.api.types import Node
 
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 class RouteOracle:
@@ -38,7 +37,7 @@ class RouteOracle:
         from fleet_gateway.api.types import Node
         node_type = _NODE_TYPE_LOOKUP.get(data["type"])
         if node_type is None:
-            logger.warning("Unknown node type %r, falling back to WAYPOINT", data["type"])
+            logger.warning("Unknown node type {!r}, falling back to WAYPOINT", data["type"])
             node_type = NodeType.WAYPOINT
         return Node(
             id=data["id"],

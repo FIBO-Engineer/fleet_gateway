@@ -1,8 +1,8 @@
 import asyncio
 import json
-import logging
 import os
 from contextlib import asynccontextmanager
+from loguru import logger
 
 import redis.asyncio as redis
 from dotenv import load_dotenv
@@ -15,8 +15,6 @@ from fleet_gateway.route_oracle import RouteOracle
 from fleet_gateway.warehouse_controller import WarehouseController
 
 from fleet_gateway.api.schema import schema
-
-logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -35,7 +33,7 @@ async def lifespan(app: FastAPI):
     try:
         app.state.route_oracle = RouteOracle(SUPABASE_URL, SUPABASE_KEY, GRAPH_ID)
     except Exception as e:
-        logger.error("Unable to initialize Supabase client (url=%r): %s", SUPABASE_URL, e)
+        logger.error("Unable to initialize Supabase client (url={!r}): {}", SUPABASE_URL, e)
         raise
 
     # Initialize Redis connection
@@ -47,7 +45,7 @@ async def lifespan(app: FastAPI):
     try:
         await app.state.redis.ping()
     except Exception as e:
-        logger.error("Unable to connect to Redis at %s:%s: %s", REDIS_HOST, REDIS_PORT, e)
+        logger.error("Unable to connect to Redis at {}:{}: {}", REDIS_HOST, REDIS_PORT, e)
         raise
 
     app.state.job_updater = asyncio.Queue()

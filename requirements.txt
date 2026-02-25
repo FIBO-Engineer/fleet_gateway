@@ -16,3 +16,6 @@ roslibpy>=1.5.0
 
 # Configuration
 python-dotenv>=1.0.0
+
+# Logging
+loguru>=0.7.3

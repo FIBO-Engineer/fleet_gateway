@@ -6,12 +6,10 @@ Handles all request CRUD operations, persistence to Redis, and request lifecycle
 from __future__ import annotations
 from typing import TYPE_CHECKING
 
-import logging
-
 import redis.asyncio as redis
 from uuid import UUID
 
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 from fleet_gateway.enums import OrderStatus
 from fleet_gateway.helpers.serializers import request_to_dict, job_to_dict
@@ -30,7 +28,7 @@ class OrderStore():
             await self.redis.hset(f"request:{str(request.uuid)}", mapping=request_to_dict(request))
             return True
         except Exception as e:
-            logger.error("Failed to store request %s: %s", request.uuid, e)
+            logger.error("Failed to store request {}: {}", request.uuid, e)
             return False
     
     async def get_request_status(self, request: Request) -> OrderStatus:
@@ -75,7 +73,7 @@ class OrderStore():
             await self.redis.hset(f"job:{str(job.uuid)}", mapping=job_to_dict(job))
             return True
         except Exception as e:
-            logger.error("Failed to store job %s: %s", job.uuid, e)
+            logger.error("Failed to store job {}: {}", job.uuid, e)
             return False
 
     async def get_job(self, uuid: UUID) -> Job | None:

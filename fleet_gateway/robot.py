@@ -8,7 +8,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import asyncio
-import logging
 import math
 import threading
 import time
@@ -22,7 +21,7 @@ from roslibpy import ActionClient, Goal, GoalStatus, Ros, Topic
 from fleet_gateway.enums import OrderStatus, RobotConnectionStatus, RobotActionStatus, JobOperation, RobotCellLevel
 from fleet_gateway.models import MobileBaseState, Pose, Tag, PiggybackState, RobotCell
 
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 _RECONNECT_INTERVAL = 5.0  # seconds between reconnect attempts
 
@@ -40,7 +39,7 @@ class RobotConnector(Ros):
         try:
             self.run(1.0)
         except Exception as e:
-            logger.warning("Robot %s initial connection failed: %s. Will retry via reconnect loop.", name, e)
+            logger.warning("Robot {} initial connection failed: {}. Will retry via reconnect loop.", name, e)
 
         # Robot state (all operational state in one place)
         self.name = name
@@ -67,8 +66,8 @@ class RobotConnector(Ros):
         self.route_oracle: RouteOracle = route_oracle
 
         # Log connection events
-        self.on('connection', lambda: logger.info("Robot %s connected", self.name))
-        self.on('close', lambda: logger.warning("Robot %s connection closed", self.name))
+        self.on('connection', lambda: logger.info("Robot {} connected", self.name))
+        self.on('close', lambda: logger.warning("Robot {} connection closed", self.name))
 
         # Start reconnect loop in a daemon thread (no Twisted imports needed)
         self._reconnect_thread = threading.Thread(
@@ -118,11 +117,11 @@ class RobotConnector(Ros):
         while self._should_reconnect:
             time.sleep(_RECONNECT_INTERVAL)
             if self._should_reconnect and not self.is_connected:
-                logger.info("Robot %s not connected, attempting reconnect...", self.name)
+                logger.info("Robot {} not connected, attempting reconnect...", self.name)
                 try:
                     self.run(1.0)
                 except Exception as e:
-                    logger.error("Robot %s reconnect error: %s", self.name, e)
+                    logger.error("Robot {} reconnect error: {}", self.name, e)
 
     def shutdown(self):
         """Stop reconnect loop and close the WebSocket connection."""
@@ -177,7 +176,7 @@ class RobotConnector(Ros):
 
         def on_error(error):
             """Handle job error"""
-            logger.error("Robot %s action error", self.name)
+            logger.error("Robot {} action error", self.name)
             self.last_action_status = RobotActionStatus.ERROR
             self.update_job_status(OrderStatus.FAILED)
 

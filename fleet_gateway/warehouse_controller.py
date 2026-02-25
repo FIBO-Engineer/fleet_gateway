@@ -2,7 +2,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 import asyncio
-import logging
 
 from fleet_gateway.enums import JobOperation, OrderStatus
 
@@ -23,7 +22,7 @@ from fleet_gateway.fleet_handler import FleetHandler
 from fleet_gateway.order_store import OrderStore
 from fleet_gateway.route_oracle import RouteOracle
 
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 class WarehouseController():
@@ -38,9 +37,9 @@ class WarehouseController():
             while True:
                 job = await queue.get()
                 if await self.order_store.set_job(job):
-                    logger.info("Updated job %s status to %s in order store", job.uuid, job.status)
+                    logger.info("Updated job {} status to {} in order store", job.uuid, job.status)
                 else:
-                    logger.error("Unable to update job %s in order store", job.uuid)
+                    logger.error("Unable to update job {} in order store", job.uuid)
 
         self._updater_task = asyncio.create_task(handle_job_updater(self.job_updater))
 
