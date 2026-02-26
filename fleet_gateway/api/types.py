@@ -186,8 +186,9 @@ class AssignmentInput:
 @strawberry.input
 class JobOrderInput:
     robot_name: str
-    target_node_id: int
     operation: JobOperation
+    target_node_id: int | None = None
+    target_node_alias: str | None = None
 
 @strawberry.input
 class RequestOrderInput:

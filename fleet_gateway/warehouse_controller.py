@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 import asyncio
 
-from fleet_gateway.enums import JobOperation, OrderStatus
+from fleet_gateway.enums import JobOperation, NodeType, OrderStatus
 
 if TYPE_CHECKING:
     from fleet_gateway.api.types import (
@@ -43,22 +43,39 @@ class WarehouseController():
 
         self._updater_task = asyncio.create_task(handle_job_updater(self.job_updater))
 
-    def validate_job(self, robot_name: str, target_node_id: int) -> Node | None:
-        # Check if node exists
-        target_node = self.route_oracle.get_node_by_id(target_node_id)
+    def validate_job(self, robot_name: str, operation: JobOperation | None = None,
+                     target_node_id: int | None = None, target_node_alias: str | None = None) -> Node | None:
+        # Resolve node by id or alias
+        if target_node_id is not None:
+            target_node = self.route_oracle.get_node_by_id(target_node_id)
+        elif target_node_alias is not None:
+            target_node = self.route_oracle.get_node_by_alias(target_node_alias)
+        else:
+            return None
+
         if target_node is None:
-            return None #JobOrderResult(False, f"Unable to find target node id: {target_node_id}", None)
-        
+            return None
+
         # Check if robot exists
         if self.fleet_handler.get_robot(robot_name) is None:
-            return None #JobOrderResult(False, f"Unable to find robot name: {robot_name}", None)
-        
+            return None
+
+        # TRAVEL operation must target a waypoint
+        if operation == JobOperation.TRAVEL and target_node.node_type != NodeType.WAYPOINT:
+            logger.warning("TRAVEL operation rejected: node {} is {} not WAYPOINT",
+                           target_node_id or target_node_alias, target_node.node_type)
+            return None
+
         return target_node
 
     async def accept_job_order(self, job_order: JobOrderInput) -> JobOrderResult:
         from fleet_gateway.api.types import Job, JobOrderResult
-        if (target_node := self.validate_job(job_order.robot_name, job_order.target_node_id)) is None:
-            return JobOrderResult(success=False, message=f"Unable to validate robot {job_order.robot_name} or node {job_order.target_node_id}", job=None)
+        if job_order.target_node_id is None and job_order.target_node_alias is None:
+            return JobOrderResult(success=False, message="Either target_node_id or target_node_alias must be provided", job=None)
+
+        if (target_node := self.validate_job(job_order.robot_name, job_order.operation,
+                                             job_order.target_node_id, job_order.target_node_alias)) is None:
+            return JobOrderResult(success=False, message=f"Unable to validate robot {job_order.robot_name} or node {job_order.target_node_id or job_order.target_node_alias}", job=None)
 
         # Try to insert data in order_store
         job = Job(uuid=uuid4(), status=OrderStatus.QUEUING, operation=job_order.operation,

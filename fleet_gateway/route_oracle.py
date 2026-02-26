@@ -42,8 +42,8 @@ class RouteOracle:
             node_type = NodeType.WAYPOINT
         return Node(
             id=data["id"],
-            alias=data.get("alias"),
-            tag_id=data.get("tag_id"),
+            alias=data.get("alias") or "",
+            tag_id=data.get("tag_id") or "",
             x=data["x"],
             y=data["y"],
             height=data["height"] if data["height"] is not None else 0.0,
@@ -60,6 +60,16 @@ class RouteOracle:
         res = self.supabase.rpc(
             "wh_get_node_by_tag_id",
             {"p_graph_id": graph_id, "p_tag_id": tag_id},
+        ).execute()
+        if not res.data:
+            return None
+        return self._row_to_node(res.data[0])
+
+    def get_node_by_alias(self, alias: str, graph_id: int | None = None) -> Node | None:
+        graph_id = self._resolve_graph_id(graph_id)
+        res = self.supabase.rpc(
+            "wh_get_node_by_alias",
+            {"p_graph_id": graph_id, "p_alias": alias},
         ).execute()
         if not res.data:
             return None
