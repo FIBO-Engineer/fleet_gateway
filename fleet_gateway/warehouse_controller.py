@@ -37,9 +37,9 @@ class WarehouseController():
             while True:
                 job = await queue.get()
                 if await self.order_store.set_job(job):
-                    logger.info("Updated job {} status to {} in order store", job.uuid, job.status)
+                    logger.info("Updated job {} status to {} in order_store", job.uuid, job.status)
                 else:
-                    logger.error("Unable to update job {} in order store", job.uuid)
+                    logger.error("Unable to update job {} in order_store", job.uuid)
 
         self._updater_task = asyncio.create_task(handle_job_updater(self.job_updater))
 
@@ -64,11 +64,11 @@ class WarehouseController():
         job = Job(uuid=uuid4(), status=OrderStatus.QUEUING, operation=job_order.operation,
                   target_node=target_node, request_uuid=None, handling_robot_name=job_order.robot_name)
         if not await self.order_store.set_job(job):
-            return JobOrderResult(success=False, message="Unable to set job in order store", job=None)
+            return JobOrderResult(success=False, message="Unable to set job in order_store", job=None)
 
         # Just put into the queue
         self.fleet_handler.assign_job(job_order.robot_name, job)
-        return JobOrderResult(success=True, message="Successfully save job into order store and robot", job=job)
+        return JobOrderResult(success=True, message="Successfully save job into order_store and robot", job=job)
 
     async def accept_request_order(self, request_order: RequestOrderInput) -> RequestOrderResult:
         from fleet_gateway.api.types import Job, Request, RequestOrderResult
@@ -100,7 +100,7 @@ class WarehouseController():
         self.fleet_handler.assign_job(request_order.robot_name, pickup_job)
         self.fleet_handler.assign_job(request_order.robot_name, delivery_job)
 
-        return RequestOrderResult(success=True, message=f"Successfully save request into order store and queue in robot", request=request)
+        return RequestOrderResult(success=True, message=f"Successfully save request into order_store and queue in robot", request=request)
 
     async def accept_warehouse_order(self, warehouse_order: WarehouseOrderInput) -> WarehouseOrderResult:
         from fleet_gateway.api.types import WarehouseOrderResult

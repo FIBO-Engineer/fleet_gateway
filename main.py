@@ -6,7 +6,7 @@ from loguru import logger
 
 import redis.asyncio as redis
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from strawberry.fastapi import GraphQLRouter
 
 from fleet_gateway.fleet_handler import FleetHandler
@@ -30,10 +30,12 @@ ROBOTS_CONFIG = json.loads(os.getenv('ROBOTS_CONFIG', '{}'))
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Initialize RouteOracle (Supabase client)
+    app.state.route_oracle = RouteOracle(SUPABASE_URL, SUPABASE_KEY, GRAPH_ID)
     try:
-        app.state.route_oracle = RouteOracle(SUPABASE_URL, SUPABASE_KEY, GRAPH_ID)
+        app.state.route_oracle.ping()
+        logger.info("Supabase connection succeeded (url={!r})", SUPABASE_URL)
     except Exception as e:
-        logger.error("Unable to initialize Supabase client (url={!r}): {}", SUPABASE_URL, e)
+        logger.error("Unable to connect to Supabase (url={!r}): {}", SUPABASE_URL, e)
         raise
 
     # Initialize Redis connection
@@ -62,7 +64,7 @@ async def lifespan(app: FastAPI):
         app.state.warehouse_controller._updater_task.cancel()
         await app.state.redis.aclose()
 
-async def get_context(request):
+async def get_context(request: Request):
     return {
         "request": request,
         "order_store": request.app.state.order_store,
@@ -73,7 +75,7 @@ async def get_context(request):
 
 # Create GraphQL router with context getter
 # Note: The schema is already created in fleet_gateway.api.schema
-graphql_app = GraphQLRouter(schema, context_getter=get_context)
+graphql_app = GraphQLRouter(schema, context_getter=get_context, graphql_ide="apollo-sandbox")
 
 app = FastAPI(lifespan=lifespan)
 app.include_router(graphql_app, prefix="/graphql")

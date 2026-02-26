@@ -54,7 +54,7 @@ class Request:
         order_store: OrderStore = info.context["order_store"]
         job = await order_store.get_job(self.pickup_uuid)
         if job is None:
-            raise ValueError(f"Pickup job {self.pickup_uuid} not found in order store")
+            raise ValueError(f"Pickup job {self.pickup_uuid} not found in order_store")
         return job
 
     @strawberry.field
@@ -62,7 +62,7 @@ class Request:
         order_store: OrderStore = info.context["order_store"]
         job = await order_store.get_job(self.delivery_uuid)
         if job is None:
-            raise ValueError(f"Delivery job {self.delivery_uuid} not found in order store")
+            raise ValueError(f"Delivery job {self.delivery_uuid} not found in order_store")
         return job
 
     @strawberry.field

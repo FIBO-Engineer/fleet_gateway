@@ -38,6 +38,7 @@ class RobotConnector(Ros):
         self._should_reconnect = True
         try:
             self.run(1.0)
+            logger.info("Robot {} initial connection succeeded", name)
         except Exception as e:
             logger.warning("Robot {} initial connection failed: {}. Will retry via reconnect loop.", name, e)
 
@@ -49,7 +50,7 @@ class RobotConnector(Ros):
         self.piggyback_state = None
 
         # Setup the action client
-        self.warehouse_cmd_action_client = ActionClient(self, '/warehouse_command', 'warehouse_server/WarehouseCommandAction')
+        self.warehouse_cmd_action_client = ActionClient(self, '/warehouse_command', 'amr_interfaces/WarehouseCommand')
         self.action_future = None
         
         # Setup Mobile Base State Subscribers
@@ -91,6 +92,8 @@ class RobotConnector(Ros):
     def qr_id_callback(self, message):
         """"Callback for QR"""
         if 'data' in message:
+            if self.mobile_base_state.tag is None or self.mobile_base_state.tag.qr_id != message['data']:
+                logger.debug("Robot {} QR tag changed: {} -> {}", self.name, self.mobile_base_state.tag.qr_id if self.mobile_base_state.tag else None, message['data'])
             self.mobile_base_state.tag = Tag(datetime.now(timezone(timedelta(hours=7))), message['data'])
 
     def piggyback_callback(self, message):
@@ -147,11 +150,14 @@ class RobotConnector(Ros):
             raise RuntimeError("No path found to target node")
         path_nodes : list[Node] = self.route_oracle.get_nodes_by_ids(node_ids=path_node_ids)
         
-        goal = Goal({
+        goal_dict = {
             'nodes': [ node_to_dict(node) for node in path_nodes ],
             'operation': job.operation.value,
             'robot_cell': robot_cell.value
-        })
+        }
+        import json
+        logger.debug("Robot {} sending goal:\n{}", self.name, json.dumps(goal_dict, indent=2))
+        goal = Goal(goal_dict)
 
         # Send goal with callbacks
         def on_result(result):
@@ -176,7 +182,7 @@ class RobotConnector(Ros):
 
         def on_error(error):
             """Handle job error"""
-            logger.error("Robot {} action error", self.name)
+            logger.error("Robot {} action error: {}", self.name, error)
             self.last_action_status = RobotActionStatus.ERROR
             self.update_job_status(OrderStatus.FAILED)
 
@@ -213,6 +219,7 @@ class RobotHandler(RobotConnector):
     
     def assign(self, job: Job):
         self.job_queue.append(job)
+        logger.info("Robot {} job queued: {} (queue size: {})", self.name, job.uuid, len(self.job_queue))
         self.trigger()
 
     def update_job_status(self, status: OrderStatus):
@@ -254,7 +261,8 @@ class RobotHandler(RobotConnector):
                 else:
                     robot_cell = RobotCellLevel.UNUSED
                 self.send_job(self.current_job, robot_cell)
-            except RuntimeError:
+            except RuntimeError as e:
+                logger.error("Robot {} failed to send job {}: {}", self.name, self.current_job.uuid, e)
                 self.last_action_status = RobotActionStatus.ERROR
                 self.current_job.status = OrderStatus.FAILED
                 self.loop.call_soon_threadsafe(self.job_updater.put_nowait, self.current_job)

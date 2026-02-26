@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
 
+import httpx
 from supabase import create_client, Client
 
 from fleet_gateway.enums import NodeType
@@ -45,9 +46,14 @@ class RouteOracle:
             tag_id=data.get("tag_id"),
             x=data["x"],
             y=data["y"],
-            height=data["height"],
+            height=data["height"] if data["height"] is not None else 0.0,
             node_type=node_type,
         )
+
+    def ping(self) -> None:
+        """Raise if Supabase is not reachable (hits /health, no DB query)."""
+        r = httpx.get(f"{self.url}/rest-admin/v1/live", timeout=5.0)
+        r.raise_for_status()
 
     def get_node_by_tag_id(self, tag_id: str, graph_id: int | None = None) -> Node | None:
         graph_id = self._resolve_graph_id(graph_id)
@@ -88,3 +94,14 @@ class RouteOracle:
                 {"p_graph_id": graph_id, "p_start_vid": start_id, "p_end_vid": end_id},
             ).execute().data
         )
+
+# def main():
+#     url: str = "http://10.61.6.65:54321/"
+#     key: str = "sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH"
+#     ro = RouteOracle(url, key, None)
+#     path = ro.get_shortest_path_by_alias(start_alias="Q2", end_alias="Q9", graph_id=1)
+#     nodes = ro.get_nodes_by_ids(path, graph_id=1)
+#     print(nodes)
+
+# if __name__ == "__main__":
+#     main()
