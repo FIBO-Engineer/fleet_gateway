@@ -58,7 +58,7 @@ class WarehouseController():
 
     async def accept_job_order(self, job_order: JobOrderInput) -> JobOrderResult:
         from fleet_gateway.api.types import Job, JobOrderResult
-        target_node = self.get_node(job_order.target_node_alias or job_order.target_node_id)
+        target_node = self.route_oracle.get_node(job_order.target_node_alias or job_order.target_node_id)
 
         if self.fleet_handler.get_robot(job_order.robot_name) is None:
             raise RuntimeError(f"Robot {job_order.robot_name} not found")
@@ -97,19 +97,19 @@ class WarehouseController():
         return request, pickup_job, delivery_job
 
     async def accept_request_order(self, request_order: RequestOrderInput) -> RequestOrderResult:
-        from fleet_gateway.api.types import Job, Request, RequestOrderResult
+        from fleet_gateway.api.types import RequestOrderResult
 
         if request_order.request_id is None and request_order.request_alias is None:
             return RequestOrderResult(success=False, message="Either request_id or request_alias must be provided", request=None)
 
-        request_id_alias : tuple[int, int] | tuple[str, str]
+        node_specifiers: list[int] | list[str]
         if request_order.request_id is not None:
-            request_id_alias = tuple(request_order.request_id.pickup_node_id, request_order.request_id.delivery_node_id)
+            node_specifiers = [request_order.request_id.pickup_node_id, request_order.request_id.delivery_node_id]
         else:
-            request_id_alias = tuple(request_order.request_alias.pickup_node_alias, request_order.request_alias.delivery_node_alias)
+            node_specifiers = [request_order.request_alias.pickup_node_alias, request_order.request_alias.delivery_node_alias]
 
-        pd_nodes : tuple[Node, Node] = self.get_pd_nodes(request_order=request_id_alias)
-        request, pickup_job, delivery_job = await self.create_request(pd_nodes, request_order.robot_name)
+        pd_nodes: tuple[Node, Node] = tuple(self.route_oracle.get_nodes(node_specifiers))
+        request, pickup_job, delivery_job = await self.create_request_jobs(pd_nodes, request_order.robot_name)
         
         self.fleet_handler.assign_job(request_order.robot_name, pickup_job)
         self.fleet_handler.assign_job(request_order.robot_name, delivery_job)
@@ -143,22 +143,23 @@ class WarehouseController():
         return robot_to_node_incides
 
     async def accept_warehouse_order(self, warehouse_order: WarehouseOrderInput) -> WarehouseOrderResult:
-        from fleet_gateway.api.types import Job, Request, RequestIDInput, RequestAliasInput, WarehouseOrderResult
+        from fleet_gateway.api.types import WarehouseOrderResult
 
         if warehouse_order.request_ids is None and warehouse_order.request_aliases is None:
             return WarehouseOrderResult(success=False, message="Either request_ids or request_aliases must be provided", requests=[])
         if warehouse_order.request_ids is not None and warehouse_order.request_aliases is not None:
             return WarehouseOrderResult(success=False, message="Provide either request_ids or request_aliases, not both", requests=[])
 
+        use_ids = warehouse_order.request_ids is not None
         node_to_robot : dict[int, str] | dict[str, str] = self.create_node_to_robot_dict(warehouse_order.assignments)
         robot_to_node_indices: dict[str, dict[int, int]] | dict[str, dict[str, int]] = self.create_robot_to_node_incides(warehouse_order.assignments)
-        robot_job_route: dict[str, list[Job]] = { asm.robot_name: [None for _ in range(len(asm.route_node_ids))] for asm in warehouse_order.assignments }
+        robot_job_route: dict[str, list[Job]] = { asm.robot_name: [None] * len(asm.route_node_ids or asm.route_node_aliases) for asm in warehouse_order.assignments }
 
         requests: list[Request] = []
 
         for r in warehouse_order.request_ids or warehouse_order.request_aliases:
-            pickup: int | str = r.pickup_node_id or r.pickup_node_alias
-            delivery: int | str = r.delivery_node_id or r.delivery_node_alias
+            pickup: int | str = r.pickup_node_id if use_ids else r.pickup_node_alias
+            delivery: int | str = r.delivery_node_id if use_ids else r.delivery_node_alias
             nodes: tuple[Node, Node] = tuple(self.route_oracle.get_nodes([pickup, delivery]))
             
             if node_to_robot[pickup] != node_to_robot[delivery]:
@@ -179,13 +180,28 @@ class WarehouseController():
         return WarehouseOrderResult(success=True, message=f"Successfully created {len(requests)} request(s)", requests=requests)
 
     async def cancel_job_order(self, uuid: UUID) -> Job | None:
-        return None
+        job = await self.order_store.get_job(uuid)
+        if job is None:
+            return None
+        if job.status in (OrderStatus.COMPLETED, OrderStatus.CANCELED, OrderStatus.FAILED):
+            return job
+        self.fleet_handler.remove_queued_job(job.handling_robot_name, uuid)
+        job.status = OrderStatus.CANCELED
+        await self.order_store.set_job(job)
+        return job
 
     async def cancel_job_orders(self, uuids: list[UUID]) -> list[Job]:
-        return []
+        results = [await self.cancel_job_order(uuid) for uuid in uuids]
+        return [job for job in results if job is not None]
 
     async def cancel_request_order(self, uuid: UUID) -> Request | None:
-        return None
+        request = await self.order_store.get_request(uuid)
+        if request is None:
+            return None
+        await self.cancel_job_order(request.pickup_uuid)
+        await self.cancel_job_order(request.delivery_uuid)
+        return request
 
     async def cancel_request_orders(self, uuids: list[UUID]) -> list[Request]:
-        return []
+        results = [await self.cancel_request_order(uuid) for uuid in uuids]
+        return [r for r in results if r is not None]

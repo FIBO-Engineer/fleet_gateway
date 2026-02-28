@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import asyncio
+from uuid import UUID
 
 from fleet_gateway.robot import RobotHandler
 from fleet_gateway.route_oracle import RouteOracle
@@ -47,6 +48,16 @@ class FleetHandler():
         if name not in self.handlers:
             return []
         return self.handlers[name].job_queue
+
+    def remove_queued_job(self, robot_name: str, job_uuid: UUID) -> bool:
+        if robot_name not in self.handlers:
+            return False
+        queue = self.handlers[robot_name].job_queue
+        for i, job in enumerate(queue):
+            if job.uuid == job_uuid:
+                queue.pop(i)
+                return True
+        return False
 
     def shutdown(self):
         """Stop reconnect loops and close all robot WebSocket connections."""
