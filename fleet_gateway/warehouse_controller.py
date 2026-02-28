@@ -46,15 +46,15 @@ class WarehouseController():
 
         self._updater_task = asyncio.create_task(handle_job_updater(self.job_updater))
 
-    def get_node(self, node_specifier: int | str) -> Node:
-        return self.route_oracle.get_node(node_specifier)
+    # def get_node(self, node_specifier: int | str) -> Node:
+    #     return self.route_oracle.get_node(node_specifier)
 
-    def get_nodes(self, node_specifiers: list[int] | list[str]) -> list[Node]:
-        return self.route_oracle.get_nodes(node_specifiers)
+    # def get_nodes(self, node_specifiers: list[int] | list[str]) -> list[Node]:
+    #     return self.route_oracle.get_nodes(node_specifiers)
 
-    def get_pd_nodes(self, node_specifiers: tuple[int, int] | tuple[str, str]) -> tuple[Node, Node]:
-        nodes = self.route_oracle.get_nodes(list(node_specifiers))
-        return (nodes[0], nodes[1])
+    # def get_pd_nodes(self, node_specifiers: tuple[int, int] | tuple[str, str]) -> tuple[Node, Node]:
+    #     nodes = self.route_oracle.get_nodes(list(node_specifiers))
+    #     return (nodes[0], nodes[1])
 
     async def accept_job_order(self, job_order: JobOrderInput) -> JobOrderResult:
         from fleet_gateway.api.types import Job, JobOrderResult
@@ -77,7 +77,7 @@ class WarehouseController():
         return JobOrderResult(success=True, message="Successfully save job into order_store and robot", job=job)
     
 
-    async def create_request(self, pd_nodes: tuple[Node, Node], robot_name: str) -> tuple[Request, Job, Job]:
+    async def create_request_jobs(self, pd_nodes: tuple[Node, Node], robot_name: str) -> tuple[Request, Job, Job]:
         request_uuid: UUID = uuid4()
         pickup_job = Job(uuid=uuid4(), status=OrderStatus.QUEUING, operation=JobOperation.PICKUP,
                          target_node=pd_nodes[0], request_uuid=request_uuid, handling_robot_name=robot_name)
@@ -152,38 +152,31 @@ class WarehouseController():
 
         node_to_robot : dict[int, str] | dict[str, str] = self.create_node_to_robot_dict(warehouse_order.assignments)
         robot_to_node_indices: dict[str, dict[int, int]] | dict[str, dict[str, int]] = self.create_robot_to_node_incides(warehouse_order.assignments)
-
-        for request in warehouse_order.request_ids or warehouse_order.request_aliases:
-            if isinstance(request, int):
-                nodes: tuple[Node, Node] = self.route_oracle.get_nodes_by_ids(list(node_specifiers))
-            else:
-                nodes: tuple[Node, Node] = self.route_oracle.get_nodes_by_aliases(list(node_specifiers))
-            return nodes
-            
-        warehouse_order.request_ids
-
-        pd_nodes : list[Node] = await self.get_pd_nodes(request_order=request_order)
-
-        request, pickup_job, delivery_job = self.create_request(pd_nodes, request_order.robot_name)
-
-
+        robot_job_route: dict[str, list[Job]] = { asm.robot_name: [None for _ in range(len(asm.route_node_ids))] for asm in warehouse_order.assignments }
 
         requests: list[Request] = []
-        for request_id in request_ids:
-            uuid = uuid4()
-            pickup_job = Job()
 
-        # Build node_id → robot_name map and validate all robots upfront
-        node_to_robot: dict[int, str] = self.create_node_to_robot_dict(warehouse_order.assignments)
-        node_id_to_idx_for_robots: dict[str, dict[int, int]] = self.create_node_id_to_idx_for_robots(warehouse_order.assignments)
-        
-        for pd_pair in warehouse_order
+        for r in warehouse_order.request_ids or warehouse_order.request_aliases:
+            pickup: int | str = r.pickup_node_id or r.pickup_node_alias
+            delivery: int | str = r.delivery_node_id or r.delivery_node_alias
+            nodes: tuple[Node, Node] = tuple(self.route_oracle.get_nodes([pickup, delivery]))
             
-        robot_jobs: dict[str, list[Job]] = {}
-        
-        for 
+            if node_to_robot[pickup] != node_to_robot[delivery]:
+                return WarehouseOrderResult(success=False, message="Pickup and delivery locations mismatched", requests=[])
+            
+            robot_name = node_to_robot[pickup]
 
-        return WarehouseOrderResult(success=True, message=f"Successfully created {len(created_requests)} request(s)", requests=created_requests)
+            request, pickup_job, delivery_job = await self.create_request_jobs(nodes, node_to_robot[pickup])
+            
+            robot_job_route[robot_name][robot_to_node_indices[robot_name][pickup]] = pickup_job
+            robot_job_route[robot_name][robot_to_node_indices[robot_name][delivery]] = delivery_job            
+            requests.append(request)
+
+        for robot, job_route in robot_job_route.items():
+            for job in job_route:
+                self.fleet_handler.assign_job(robot, job)
+
+        return WarehouseOrderResult(success=True, message=f"Successfully created {len(requests)} request(s)", requests=requests)
 
     async def cancel_job_order(self, uuid: UUID) -> Job | None:
         return None
