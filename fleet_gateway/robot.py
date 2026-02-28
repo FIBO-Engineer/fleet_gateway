@@ -145,10 +145,10 @@ class RobotConnector(Ros):
         if start_node is None:
             raise RuntimeError("Unable to query start_node")
 
-        path_node_ids : list[int] = self.route_oracle.get_shortest_path_by_id(start_id=start_node.id, end_id=job.target_node.id)
+        path_node_ids : list[int] = self.route_oracle.get_shortest_path(start_node.id, job.target_node.id)
         if not path_node_ids:
             raise RuntimeError("No path found to target node")
-        path_nodes : list[Node] = self.route_oracle.get_nodes_by_ids(node_ids=path_node_ids)
+        path_nodes : list[Node] = self.route_oracle.get_nodes(path_node_ids)
         
         goal_dict = {
             'nodes': [ node_to_dict(node) for node in path_nodes ],

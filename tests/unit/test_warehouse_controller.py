@@ -54,9 +54,9 @@ def mock_route_oracle():
     ro = MagicMock()
     node = Node(id=1, alias="n1", tag_id="t1", x=0.0, y=0.0, height=0.0,
                 node_type=NodeType.SHELF)
-    ro.get_node_by_id.return_value = node
-    ro.get_nodes_by_ids.return_value = [node]
-    ro.get_shortest_path_by_id.return_value = [1]
+    ro.get_node.return_value = node
+    ro.get_nodes.return_value = [node]
+    ro.get_shortest_path.return_value = [1]
     return ro
 
 

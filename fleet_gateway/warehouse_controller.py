@@ -10,8 +10,11 @@ if TYPE_CHECKING:
         Node,
         Job,
         Request,
+        RequestIDInput,
+        RequestAliasInput,
         JobOrderInput,
         RequestOrderInput,
+        AssignmentInput,
         WarehouseOrderInput,
         JobOrderResult,
         RequestOrderResult,
@@ -43,39 +46,25 @@ class WarehouseController():
 
         self._updater_task = asyncio.create_task(handle_job_updater(self.job_updater))
 
-    def validate_job(self, robot_name: str, operation: JobOperation | None = None,
-                     target_node_id: int | None = None, target_node_alias: str | None = None) -> Node | None:
-        # Resolve node by id or alias
-        if target_node_id is not None:
-            target_node = self.route_oracle.get_node_by_id(target_node_id)
-        elif target_node_alias is not None:
-            target_node = self.route_oracle.get_node_by_alias(target_node_alias)
-        else:
-            return None
+    def get_node(self, node_specifier: int | str) -> Node:
+        return self.route_oracle.get_node(node_specifier)
 
-        if target_node is None:
-            return None
+    def get_nodes(self, node_specifiers: list[int] | list[str]) -> list[Node]:
+        return self.route_oracle.get_nodes(node_specifiers)
 
-        # Check if robot exists
-        if self.fleet_handler.get_robot(robot_name) is None:
-            return None
-
-        # TRAVEL operation must target a waypoint
-        if operation == JobOperation.TRAVEL and target_node.node_type != NodeType.WAYPOINT:
-            logger.warning("TRAVEL operation rejected: node {} is {} not WAYPOINT",
-                           target_node_id or target_node_alias, target_node.node_type)
-            return None
-
-        return target_node
+    def get_pd_nodes(self, node_specifiers: tuple[int, int] | tuple[str, str]) -> tuple[Node, Node]:
+        nodes = self.route_oracle.get_nodes(list(node_specifiers))
+        return (nodes[0], nodes[1])
 
     async def accept_job_order(self, job_order: JobOrderInput) -> JobOrderResult:
         from fleet_gateway.api.types import Job, JobOrderResult
-        if job_order.target_node_id is None and job_order.target_node_alias is None:
-            return JobOrderResult(success=False, message="Either target_node_id or target_node_alias must be provided", job=None)
+        target_node = self.get_node(job_order.target_node_alias or job_order.target_node_id)
 
-        if (target_node := self.validate_job(job_order.robot_name, job_order.operation,
-                                             job_order.target_node_id, job_order.target_node_alias)) is None:
-            return JobOrderResult(success=False, message=f"Unable to validate robot {job_order.robot_name} or node {job_order.target_node_id or job_order.target_node_alias}", job=None)
+        if self.fleet_handler.get_robot(job_order.robot_name) is None:
+            raise RuntimeError(f"Robot {job_order.robot_name} not found")
+        
+        if job_order.operation == JobOperation.TRAVEL and target_node.node_type != NodeType.WAYPOINT:
+            raise RuntimeError(f"TRAVEL operation rejected: node {target_node.id}/{target_node.alias} is {target_node.node_type} not WAYPOINT")
 
         # Try to insert data in order_store
         job = Job(uuid=uuid4(), status=OrderStatus.QUEUING, operation=job_order.operation,
@@ -86,42 +75,115 @@ class WarehouseController():
         # Just put into the queue
         self.fleet_handler.assign_job(job_order.robot_name, job)
         return JobOrderResult(success=True, message="Successfully save job into order_store and robot", job=job)
+    
+
+    async def create_request(self, pd_nodes: tuple[Node, Node], robot_name: str) -> tuple[Request, Job, Job]:
+        request_uuid: UUID = uuid4()
+        pickup_job = Job(uuid=uuid4(), status=OrderStatus.QUEUING, operation=JobOperation.PICKUP,
+                         target_node=pd_nodes[0], request_uuid=request_uuid, handling_robot_name=robot_name)
+        if not await self.order_store.set_job(pickup_job):
+            raise RuntimeError("Unable to store pickup job")
+
+        delivery_job = Job(uuid=uuid4(), status=OrderStatus.QUEUING, operation=JobOperation.DELIVERY,
+                           target_node=pd_nodes[1], request_uuid=request_uuid, handling_robot_name=robot_name)
+        if not await self.order_store.set_job(delivery_job):
+            raise RuntimeError("Unable to store delivery job")
+
+        request = Request(uuid=request_uuid, pickup_uuid=pickup_job.uuid,
+                          delivery_uuid=delivery_job.uuid, handling_robot_name=robot_name)
+        if not await self.order_store.set_request(request):
+            raise RuntimeError("Unable to store request")
+        
+        return request, pickup_job, delivery_job
 
     async def accept_request_order(self, request_order: RequestOrderInput) -> RequestOrderResult:
         from fleet_gateway.api.types import Job, Request, RequestOrderResult
-        # This appends request and delivery job queue to the specified robot
-        pd_nodes: list[Node] = []
-        for target_node_id in [request_order.request.pickup_node_id, request_order.request.delivery_node_id]:
-            if (target_node := self.validate_job(request_order.robot_name, target_node_id)) is None:
-                return RequestOrderResult(success=False, message=f"Unable to validate robot {request_order.robot_name} or node {target_node_id}", request=None)
-            else:
-                pd_nodes.append(target_node)
 
-        request_uuid : UUID = uuid4()
-        pickup_job = Job(uuid=uuid4(), status=OrderStatus.QUEUING, operation=JobOperation.PICKUP,
-                         target_node=pd_nodes[0], request_uuid=request_uuid, handling_robot_name=request_order.robot_name)
-        if not await self.order_store.set_job(pickup_job):
-            return RequestOrderResult(success=False, message=f"Unable to store pickup job", request=None)
+        if request_order.request_id is None and request_order.request_alias is None:
+            return RequestOrderResult(success=False, message="Either request_id or request_alias must be provided", request=None)
 
-        delivery_job = Job(uuid=uuid4(), status=OrderStatus.QUEUING, operation=JobOperation.DELIVERY,
-                           target_node=pd_nodes[1], request_uuid=request_uuid, handling_robot_name=request_order.robot_name)
-        if not await self.order_store.set_job(delivery_job):
-            return RequestOrderResult(success=False, message=f"Unable to store delivery job", request=None)
+        request_id_alias : tuple[int, int] | tuple[str, str]
+        if request_order.request_id is not None:
+            request_id_alias = tuple(request_order.request_id.pickup_node_id, request_order.request_id.delivery_node_id)
+        else:
+            request_id_alias = tuple(request_order.request_alias.pickup_node_alias, request_order.request_alias.delivery_node_alias)
 
-        request = Request(uuid=request_uuid, pickup_uuid=pickup_job.uuid,
-                          delivery_uuid=delivery_job.uuid, handling_robot_name=request_order.robot_name)
-        if not await self.order_store.set_request(request):
-            return RequestOrderResult(success=False, message=f"Unable to store request job", request=None)
-
-        # In robot layer, they don't care about request
+        pd_nodes : tuple[Node, Node] = self.get_pd_nodes(request_order=request_id_alias)
+        request, pickup_job, delivery_job = await self.create_request(pd_nodes, request_order.robot_name)
+        
         self.fleet_handler.assign_job(request_order.robot_name, pickup_job)
         self.fleet_handler.assign_job(request_order.robot_name, delivery_job)
+        return RequestOrderResult(success=True, message="Successfully saved request into order_store and robot queue", request=request)
 
-        return RequestOrderResult(success=True, message=f"Successfully save request into order_store and queue in robot", request=request)
+    def create_node_to_robot_dict(self, assignments: list[AssignmentInput]) -> dict[int, str] | dict[str, str]:
+        node_to_robot: dict[int, str] | dict[str, str] = {}
+        for assignment in assignments:
+            if self.fleet_handler.get_robot(assignment.robot_name) is None:
+                raise RuntimeError(f"Robot '{assignment.robot_name}' not found in fleet")
+            if assignment.route_node_ids is None and assignment.route_node_aliases is None:
+                raise RuntimeError(f"Assignment for '{assignment.robot_name}' must provide route_node_ids or route_node_aliases")
+            if assignment.route_node_ids is not None and assignment.route_node_aliases is not None:
+                raise RuntimeError(f"Assignment for '{assignment.robot_name}' must provide route_node_ids or route_node_aliases, not both")
+            
+            route_node : list[int] | list[str] = []
+            route_node = assignment.route_node_ids or assignment.route_node_aliases
+
+            for node in route_node:
+                node_to_robot[node] = assignment.robot_name
+
+        return node_to_robot
+
+    def create_robot_to_node_incides(self, assignments: list[AssignmentInput]) -> dict[str, dict[int, int]] | dict[str, dict[str, int]]:
+        robot_to_node_incides: dict[str, dict[int, int]] | dict[str, dict[str, int]] = {}
+        for assignment in assignments:
+            node_to_idx: dict[int, int] | dict[str, int] = {}
+            for idx, node in enumerate(assignment.route_node_ids or assignment.route_node_aliases):
+                node_to_idx[node] = idx
+            robot_to_node_incides[assignment.robot_name] = node_to_idx
+        return robot_to_node_incides
 
     async def accept_warehouse_order(self, warehouse_order: WarehouseOrderInput) -> WarehouseOrderResult:
-        from fleet_gateway.api.types import WarehouseOrderResult
-        return WarehouseOrderResult(success=False, message="Not implemented", requests=[])
+        from fleet_gateway.api.types import Job, Request, RequestIDInput, RequestAliasInput, WarehouseOrderResult
+
+        if warehouse_order.request_ids is None and warehouse_order.request_aliases is None:
+            return WarehouseOrderResult(success=False, message="Either request_ids or request_aliases must be provided", requests=[])
+        if warehouse_order.request_ids is not None and warehouse_order.request_aliases is not None:
+            return WarehouseOrderResult(success=False, message="Provide either request_ids or request_aliases, not both", requests=[])
+
+        node_to_robot : dict[int, str] | dict[str, str] = self.create_node_to_robot_dict(warehouse_order.assignments)
+        robot_to_node_indices: dict[str, dict[int, int]] | dict[str, dict[str, int]] = self.create_robot_to_node_incides(warehouse_order.assignments)
+
+        for request in warehouse_order.request_ids or warehouse_order.request_aliases:
+            if isinstance(request, int):
+                nodes: tuple[Node, Node] = self.route_oracle.get_nodes_by_ids(list(node_specifiers))
+            else:
+                nodes: tuple[Node, Node] = self.route_oracle.get_nodes_by_aliases(list(node_specifiers))
+            return nodes
+            
+        warehouse_order.request_ids
+
+        pd_nodes : list[Node] = await self.get_pd_nodes(request_order=request_order)
+
+        request, pickup_job, delivery_job = self.create_request(pd_nodes, request_order.robot_name)
+
+
+
+        requests: list[Request] = []
+        for request_id in request_ids:
+            uuid = uuid4()
+            pickup_job = Job()
+
+        # Build node_id → robot_name map and validate all robots upfront
+        node_to_robot: dict[int, str] = self.create_node_to_robot_dict(warehouse_order.assignments)
+        node_id_to_idx_for_robots: dict[str, dict[int, int]] = self.create_node_id_to_idx_for_robots(warehouse_order.assignments)
+        
+        for pd_pair in warehouse_order
+            
+        robot_jobs: dict[str, list[Job]] = {}
+        
+        for 
+
+        return WarehouseOrderResult(success=True, message=f"Successfully created {len(created_requests)} request(s)", requests=created_requests)
 
     async def cancel_job_order(self, uuid: UUID) -> Job | None:
         return None

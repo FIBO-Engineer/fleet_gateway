@@ -171,16 +171,23 @@ class RobotCell:
 
 # Helper types
 @strawberry.input
-class RequestInput:
+class RequestIDInput:
     """Input for a warehouse request (pickup + delivery pair)"""
     pickup_node_id: int  # Node ID of the shelf to pick from
     delivery_node_id: int  # Node ID of the depot to deliver to
 
 @strawberry.input
+class RequestAliasInput:
+    """Input for a warehouse request (pickup + delivery pair)"""
+    pickup_node_alias: str  # Node alias of the shelf to pick from
+    delivery_node_alias: str  # Node alias of the depot to deliver to
+
+@strawberry.input
 class AssignmentInput:
     """Input for a robot assignment"""
     robot_name: str  # Name of the robot
-    route_node_ids: list[int]  # List of node IDs to visit in order
+    route_node_ids: list[int] | None  # List of node IDs to visit in order
+    route_node_aliases: list[str] | None  # List of node aliases to visit in order
 
 # Input types for mutations
 @strawberry.input
@@ -193,11 +200,13 @@ class JobOrderInput:
 @strawberry.input
 class RequestOrderInput:
     robot_name: str
-    request: RequestInput
+    request_id: RequestIDInput | None
+    request_alias: RequestAliasInput | None
 
 @strawberry.input
 class WarehouseOrderInput:
-    requests: list[RequestInput]
+    request_ids: list[RequestIDInput] | None
+    request_aliases: list[RequestAliasInput] | None
     assignments: list[AssignmentInput]
 
 @strawberry.input

@@ -65,45 +65,33 @@ class RouteOracle:
             return None
         return self._row_to_node(res.data[0])
 
-    def get_node_by_alias(self, alias: str, graph_id: int | None = None) -> Node | None:
-        graph_id = self._resolve_graph_id(graph_id)
-        res = self.supabase.rpc(
-            "wh_get_node_by_alias",
-            {"p_graph_id": graph_id, "p_alias": alias},
-        ).execute()
-        if not res.data:
-            return None
-        return self._row_to_node(res.data[0])
-
-    def get_node_by_id(self, node_id: int, graph_id: int | None = None) -> Node | None:
-        nodes = self.get_nodes_by_ids([node_id], graph_id)
+    def get_node(self, node_id: int | str, graph_id: int | None = None) -> Node | None:
+        nodes = self.get_nodes([node_id], graph_id)
         return nodes[0] if nodes else None
 
-    def get_nodes_by_ids(self, node_ids: list[int], graph_id: int | None = None) -> list[Node]:
+    def get_nodes(self, node_ids: list[int] | list[str], graph_id: int | None = None) -> list[Node]:
         graph_id = self._resolve_graph_id(graph_id)
-        res = self.supabase.rpc(
-            "wh_get_nodes_by_ids",
-            {"p_graph_id": graph_id, "p_node_ids": node_ids},
-        ).execute()
+        if not node_ids:
+            return []
+        if isinstance(node_ids[0], int):
+            res = self.supabase.rpc(
+                "wh_get_nodes_by_ids",
+                {"p_graph_id": graph_id, "p_node_ids": node_ids},
+            ).execute()
+        else:
+            res = self.supabase.rpc(
+                "wh_get_nodes_by_aliases",
+                {"p_graph_id": graph_id, "p_node_aliases": node_ids},
+            ).execute()
         return [self._row_to_node(row) for row in res.data]
 
-    def get_shortest_path_by_alias(self, start_alias: str, end_alias: str, graph_id: int | None = None) -> list[int]:
+    def get_shortest_path(self, start: int | str, end: int | str, graph_id: int | None = None) -> list[int]:
         graph_id = self._resolve_graph_id(graph_id)
-        return (
-            self.supabase.rpc(
-                "wh_astar_shortest_path",
-                {"p_graph_id": graph_id, "p_start_alias": start_alias, "p_end_alias": end_alias},
-            ).execute().data
-        )
-
-    def get_shortest_path_by_id(self, start_id: int, end_id: int, graph_id: int | None = None) -> list[int]:
-        graph_id = self._resolve_graph_id(graph_id)
-        return (
-            self.supabase.rpc(
-                "wh_astar_shortest_path",
-                {"p_graph_id": graph_id, "p_start_vid": start_id, "p_end_vid": end_id},
-            ).execute().data
-        )
+        if isinstance(start, int):
+            params = {"p_graph_id": graph_id, "p_start_vid": start, "p_end_vid": end}
+        else:
+            params = {"p_graph_id": graph_id, "p_start_alias": start, "p_end_alias": end}
+        return self.supabase.rpc("wh_astar_shortest_path", params).execute().data
 
 # def main():
 #     url: str = "http://10.61.6.65:54321/"
