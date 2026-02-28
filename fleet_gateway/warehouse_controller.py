@@ -46,23 +46,16 @@ class WarehouseController():
 
         self._updater_task = asyncio.create_task(handle_job_updater(self.job_updater))
 
-    # def get_node(self, node_specifier: int | str) -> Node:
-    #     return self.route_oracle.get_node(node_specifier)
-
-    # def get_nodes(self, node_specifiers: list[int] | list[str]) -> list[Node]:
-    #     return self.route_oracle.get_nodes(node_specifiers)
-
-    # def get_pd_nodes(self, node_specifiers: tuple[int, int] | tuple[str, str]) -> tuple[Node, Node]:
-    #     nodes = self.route_oracle.get_nodes(list(node_specifiers))
-    #     return (nodes[0], nodes[1])
-
     async def accept_job_order(self, job_order: JobOrderInput) -> JobOrderResult:
         from fleet_gateway.api.types import Job, JobOrderResult
-        target_node = self.route_oracle.get_node(job_order.target_node_alias or job_order.target_node_id)
 
         if self.fleet_handler.get_robot(job_order.robot_name) is None:
             raise RuntimeError(f"Robot {job_order.robot_name} not found")
-        
+
+        target_node = self.route_oracle.get_node(job_order.target_node_alias or job_order.target_node_id)
+        if target_node is None:
+            raise RuntimeError(f"Node {job_order.target_node_alias or job_order.target_node_id!r} not found")
+
         if job_order.operation == JobOperation.TRAVEL and target_node.node_type != NodeType.WAYPOINT:
             raise RuntimeError(f"TRAVEL operation rejected: node {target_node.id}/{target_node.alias} is {target_node.node_type} not WAYPOINT")
 
@@ -78,6 +71,7 @@ class WarehouseController():
     
 
     async def create_request_jobs(self, pd_nodes: tuple[Node, Node], robot_name: str) -> tuple[Request, Job, Job]:
+        from fleet_gateway.api.types import Job, Request
         request_uuid: UUID = uuid4()
         pickup_job = Job(uuid=uuid4(), status=OrderStatus.QUEUING, operation=JobOperation.PICKUP,
                          target_node=pd_nodes[0], request_uuid=request_uuid, handling_robot_name=robot_name)
@@ -102,13 +96,19 @@ class WarehouseController():
         if request_order.request_id is None and request_order.request_alias is None:
             return RequestOrderResult(success=False, message="Either request_id or request_alias must be provided", request=None)
 
+        if self.fleet_handler.get_robot(request_order.robot_name) is None:
+            return RequestOrderResult(success=False, message=f"Robot {request_order.robot_name} not found", request=None)
+
         node_specifiers: list[int] | list[str]
         if request_order.request_id is not None:
             node_specifiers = [request_order.request_id.pickup_node_id, request_order.request_id.delivery_node_id]
         else:
             node_specifiers = [request_order.request_alias.pickup_node_alias, request_order.request_alias.delivery_node_alias]
 
-        pd_nodes: tuple[Node, Node] = tuple(self.route_oracle.get_nodes(node_specifiers))
+        pd_nodes_list = self.route_oracle.get_nodes(node_specifiers)
+        if len(pd_nodes_list) != 2:
+            return RequestOrderResult(success=False, message="One or both nodes not found", request=None)
+        pd_nodes: tuple[Node, Node] = (pd_nodes_list[0], pd_nodes_list[1])
         request, pickup_job, delivery_job = await self.create_request_jobs(pd_nodes, request_order.robot_name)
         
         self.fleet_handler.assign_job(request_order.robot_name, pickup_job)
@@ -160,22 +160,33 @@ class WarehouseController():
         for r in warehouse_order.request_ids or warehouse_order.request_aliases:
             pickup: int | str = r.pickup_node_id if use_ids else r.pickup_node_alias
             delivery: int | str = r.delivery_node_id if use_ids else r.delivery_node_alias
-            nodes: tuple[Node, Node] = tuple(self.route_oracle.get_nodes([pickup, delivery]))
-            
+
+            nodes_list = self.route_oracle.get_nodes([pickup, delivery])
+            if len(nodes_list) != 2:
+                return WarehouseOrderResult(success=False, message=f"One or both nodes not found: {pickup!r}, {delivery!r}", requests=[])
+            nodes: tuple[Node, Node] = (nodes_list[0], nodes_list[1])
+
+            if pickup not in node_to_robot or delivery not in node_to_robot:
+                return WarehouseOrderResult(success=False, message=f"Node {pickup!r} or {delivery!r} not assigned to any robot", requests=[])
+
             if node_to_robot[pickup] != node_to_robot[delivery]:
                 return WarehouseOrderResult(success=False, message="Pickup and delivery locations mismatched", requests=[])
-            
+
             robot_name = node_to_robot[pickup]
 
-            request, pickup_job, delivery_job = await self.create_request_jobs(nodes, node_to_robot[pickup])
-            
+            if pickup not in robot_to_node_indices[robot_name] or delivery not in robot_to_node_indices[robot_name]:
+                return WarehouseOrderResult(success=False, message=f"Node {pickup!r} or {delivery!r} not in robot {robot_name!r} route", requests=[])
+
+            request, pickup_job, delivery_job = await self.create_request_jobs(nodes, robot_name)
+
             robot_job_route[robot_name][robot_to_node_indices[robot_name][pickup]] = pickup_job
-            robot_job_route[robot_name][robot_to_node_indices[robot_name][delivery]] = delivery_job            
+            robot_job_route[robot_name][robot_to_node_indices[robot_name][delivery]] = delivery_job
             requests.append(request)
 
         for robot, job_route in robot_job_route.items():
             for job in job_route:
-                self.fleet_handler.assign_job(robot, job)
+                if job is not None:
+                    self.fleet_handler.assign_job(robot, job)
 
         return WarehouseOrderResult(success=True, message=f"Successfully created {len(requests)} request(s)", requests=requests)
 
